@@ -46,9 +46,9 @@ export default function Chat() {
       {/* 顶部标题栏 */}
       <header className="flex items-center justify-center h-14 border-b border-zinc-200 bg-white shrink-0">
         <h1 className="text-base font-semibold">
-          AI Chat{" "}
+          知识库问答{" "}
           <span className="text-xs font-normal text-zinc-400 ml-1">
-            DeepSeek V4 Flash
+            RAG + DeepSeek V4 Flash
           </span>
         </h1>
       </header>
@@ -60,8 +60,8 @@ export default function Chat() {
             <div className="flex items-center justify-center h-[60vh]">
               <Welcome
                 icon={<RobotOutlined style={{ fontSize: 48, color: "#1677ff" }} />}
-                title="AI Chat"
-                description="基于 DeepSeek V4 Flash，有什么想聊的？"
+                title="知识库问答"
+                description="上传文档后提问，AI 会基于你的知识库回答。先去左侧「知识库」上传文档吧！"
               />
             </div>
           ) : (
