@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { initDb, insertChunk } from "@/lib/db";
 import { getEmbedding } from "@/lib/embedding";
 import { chunkText } from "@/lib/chunker";
+import { sanitizeContent } from "@/lib/sanitizer";
 import mammoth from "mammoth";
 
 /**
@@ -27,6 +28,12 @@ export async function POST(req: NextRequest) {
 
     if (!text.trim()) {
       return NextResponse.json({ error: "文件内容为空" }, { status: 400 });
+    }
+
+    // 安全检查：拦截 Prompt 注入攻击和超大文档
+    const check = sanitizeContent(text);
+    if (!check.safe) {
+      return NextResponse.json({ error: check.reason }, { status: 403 });
     }
 
     // 4. 切片
