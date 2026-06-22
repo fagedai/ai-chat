@@ -1,10 +1,20 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
 
-const deepseek = createOpenAI({
-  apiKey: process.env.DEEPSEEK_API_KEY,
-  baseURL: "https://api.deepseek.com",
-});
+// LLM 配置：有 SILICONFLOW_API_KEY 时用免费模型，否则用 DeepSeek
+const llmProvider = process.env.SILICONFLOW_API_KEY
+  ? createOpenAI({
+      apiKey: process.env.SILICONFLOW_API_KEY,
+      baseURL: "https://api.siliconflow.cn/v1",
+    })
+  : createOpenAI({
+      apiKey: process.env.DEEPSEEK_API_KEY,
+      baseURL: "https://api.deepseek.com",
+    });
+
+const llmModel = process.env.SILICONFLOW_API_KEY
+  ? "Qwen/Qwen2.5-7B-Instruct"
+  : "deepseek-chat";
 
 // 节点类型
 interface WorkflowNode {
@@ -103,10 +113,10 @@ async function executeNode(
       // 找到上游节点的输出作为输入
       const parentOutput = getParentOutput(node.id, edges, variables);
       const prompt = (node.data.prompt as string) || "请回答以下问题：";
-      const model = (node.data.model as string) || "deepseek-v4-flash";
+      const model = (node.data.model as string) || llmModel;
 
       const { text } = await generateText({
-        model: deepseek.chat(model),
+        model: llmProvider.chat(model),
         prompt: `${prompt}\n\n用户输入：${parentOutput}`,
       });
       return text;

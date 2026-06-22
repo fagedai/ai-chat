@@ -1,4 +1,5 @@
 import postgres from "postgres";
+import { getEmbeddingDimension } from "./embedding";
 
 // 数据库连接（支持 Supabase 云数据库 + 本地 Docker）
 export const sql = postgres({
@@ -17,13 +18,15 @@ export const sql = postgres({
 export async function initDb() {
   await sql`CREATE EXTENSION IF NOT EXISTS vector`;
 
+  const dim = getEmbeddingDimension();
+
   await sql`
     CREATE TABLE IF NOT EXISTS documents (
       id SERIAL PRIMARY KEY,
       filename TEXT NOT NULL,
       chunk_index INTEGER NOT NULL,
       content TEXT NOT NULL,
-      embedding vector(512),
+      embedding vector(${dim}),
       created_at TIMESTAMP DEFAULT NOW()
     )
   `;

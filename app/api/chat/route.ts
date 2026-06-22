@@ -3,10 +3,20 @@ import { streamText, convertToModelMessages, type ModelMessage } from "ai";
 import { getEmbedding } from "@/lib/embedding";
 import { searchSimilar } from "@/lib/db";
 
-const deepseek = createOpenAI({
-  apiKey: process.env.DEEPSEEK_API_KEY,
-  baseURL: 'https://api.deepseek.com',
-});
+// LLM 配置：有 SILICONFLOW_API_KEY 时用免费模型，否则用 DeepSeek
+const llmProvider = process.env.SILICONFLOW_API_KEY
+  ? createOpenAI({
+      apiKey: process.env.SILICONFLOW_API_KEY,
+      baseURL: "https://api.siliconflow.cn/v1",
+    })
+  : createOpenAI({
+      apiKey: process.env.DEEPSEEK_API_KEY,
+      baseURL: "https://api.deepseek.com",
+    });
+
+const llmModel = process.env.SILICONFLOW_API_KEY
+  ? "Qwen/Qwen2.5-7B-Instruct"  // 硅基流动免费模型
+  : "deepseek-chat";              // DeepSeek 付费模型
 
 // ---- 加固配置 ----
 const SIMILARITY_THRESHOLD = 0.5; // 相似度低于 50% 的片段不引用
@@ -74,7 +84,7 @@ ${context}
 
   // 2. 流式回答
   const result = streamText({
-    model: deepseek.chat("deepseek-v4-flash"),
+    model: llmProvider.chat(llmModel),
     system: systemPrompt,
     messages: modelMessages,
   });
