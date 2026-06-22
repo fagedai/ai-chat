@@ -33,6 +33,17 @@ export async function initDb() {
     CREATE INDEX IF NOT EXISTS embedding_idx
     ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)
   `;
+
+  // 工作流表
+  await sql`
+    CREATE TABLE IF NOT EXISTS workflows (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL DEFAULT '未命名工作流',
+      data JSONB NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `;
 }
 
 /**
@@ -99,4 +110,67 @@ export async function listDocuments() {
  */
 export async function deleteDocument(filename: string) {
   await sql`DELETE FROM documents WHERE filename = ${filename}`;
+}
+
+// ========== 工作流 CRUD ==========
+
+/**
+ * 保存工作流（新增或更新）
+ */
+export async function saveWorkflow(
+  id: number | null,
+  name: string,
+  data: unknown
+): Promise<number> {
+  if (id) {
+    // 更新现有工作流
+    const result = await sql`
+      UPDATE workflows SET name = ${name}, data = ${JSON.stringify(data)}, updated_at = NOW()
+      WHERE id = ${id} RETURNING id
+    `;
+    return (result as unknown as Array<{ id: number }>)[0].id;
+  } else {
+    // 新建工作流
+    const result = await sql`
+      INSERT INTO workflows (name, data) VALUES (${name}, ${JSON.stringify(data)})
+      RETURNING id
+    `;
+    return (result as unknown as Array<{ id: number }>)[0].id;
+  }
+}
+
+/**
+ * 获取所有工作流列表
+ */
+export async function listWorkflows() {
+  const results = await sql`
+    SELECT id, name, created_at, updated_at FROM workflows ORDER BY updated_at DESC
+  `;
+  return results as unknown as Array<{
+    id: number;
+    name: string;
+    created_at: string;
+    updated_at: string;
+  }>;
+}
+
+/**
+ * 获取单个工作流详情
+ */
+export async function getWorkflow(id: number) {
+  const results = await sql`SELECT * FROM workflows WHERE id = ${id}`;
+  return (results as unknown as Array<{
+    id: number;
+    name: string;
+    data: unknown;
+    created_at: string;
+    updated_at: string;
+  }>)[0] || null;
+}
+
+/**
+ * 删除工作流
+ */
+export async function deleteWorkflow(id: number) {
+  await sql`DELETE FROM workflows WHERE id = ${id}`;
 }
