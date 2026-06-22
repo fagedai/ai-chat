@@ -1,12 +1,13 @@
 import postgres from "postgres";
 
-// 数据库连接（pgvector 容器启动后自动连接）
+// 数据库连接（支持 Supabase 云数据库 + 本地 Docker）
 export const sql = postgres({
   host: process.env.DB_HOST || "localhost",
   port: Number(process.env.DB_PORT) || 5432,
   database: process.env.DB_NAME || "postgres",
   username: process.env.DB_USER || "postgres",
   password: process.env.DB_PASSWORD || "postgres",
+  ssl: process.env.DB_HOST?.includes("supabase") ? "require" : false,
 });
 
 /**
@@ -43,9 +44,11 @@ export async function insertChunk(
   content: string,
   embedding: number[]
 ) {
+  // pgvector 要求向量格式为 "[0.1, 0.2, ...]"，需转为 JSON 字符串
+  const vectorStr = JSON.stringify(embedding);
   await sql`
     INSERT INTO documents (filename, chunk_index, content, embedding)
-    VALUES (${filename}, ${chunkIndex}, ${content}, ${embedding}::vector)
+    VALUES (${filename}, ${chunkIndex}, ${content}, ${vectorStr}::vector)
   `;
 }
 
@@ -56,11 +59,13 @@ export async function searchSimilar(
   queryEmbedding: number[],
   limit = 3
 ) {
+  // pgvector 要求向量格式为 "[0.1, 0.2, ...]"
+  const vectorStr = JSON.stringify(queryEmbedding);
   const results = await sql`
     SELECT id, filename, chunk_index, content,
-           1 - (embedding <=> ${queryEmbedding}::vector) AS similarity
+           1 - (embedding <=> ${vectorStr}::vector) AS similarity
     FROM documents
-    ORDER BY embedding <=> ${queryEmbedding}::vector
+    ORDER BY embedding <=> ${vectorStr}::vector
     LIMIT ${limit}
   `;
   return results as unknown as Array<{

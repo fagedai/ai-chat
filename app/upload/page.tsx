@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useTransition, useRef } from "react";
+import { useState, useCallback, useTransition, useEffect } from "react";
 import {
   DeleteOutlined,
   InboxOutlined,
@@ -41,12 +41,11 @@ export default function UploadPage() {
     });
   }, []);
 
-  // 首次加载：用 queueMicrotask 延迟到渲染结束后再调用
-  const initRef = useRef<null | boolean>(null);
-  if (initRef.current == null) {
-    initRef.current = true;
-    queueMicrotask(() => refresh());
-  }
+  // 首次加载文档列表
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line
+  }, []);
 
   // 上传文件
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {

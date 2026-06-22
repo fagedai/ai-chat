@@ -17,8 +17,18 @@ export async function POST(req: Request) {
 
   try {
     const lastUserMsg = modelMessages.filter((m) => m.role === "user").pop();
-    const userQuestion =
-      typeof lastUserMsg?.content === "string" ? lastUserMsg.content : "";
+    // AI SDK v6: content 是数组 [{type:"text", text:"..."}], 需提取文本
+    let userQuestion = "";
+    if (lastUserMsg) {
+      if (typeof lastUserMsg.content === "string") {
+        userQuestion = lastUserMsg.content;
+      } else if (Array.isArray(lastUserMsg.content)) {
+        userQuestion = (lastUserMsg.content as Array<{ type: string; text?: string }>)
+          .filter((p) => p.type === "text")
+          .map((p) => p.text || "")
+          .join("");
+      }
+    }
 
     if (userQuestion) {
       const questionEmbedding = await getEmbedding(userQuestion);

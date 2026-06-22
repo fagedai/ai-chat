@@ -11,7 +11,10 @@ let embedder: any = null;
 async function getEmbedder() {
   if (!embedder) {
     // @xenova/transformers 是 ESM 模块，需要动态 import
-    const { pipeline } = await import("@xenova/transformers");
+    const { pipeline, env } = await import("@xenova/transformers");
+    // 使用国内镜像加速下载
+    env.remoteHost = process.env.HF_ENDPOINT || "https://huggingface.co";
+    env.remotePathTemplate = "{model}/resolve/{revision}/";
     embedder = await pipeline(
       "feature-extraction",
       "Xenova/bge-small-zh-v1.5"
