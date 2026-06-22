@@ -1,5 +1,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
+import { topologicalSort, getParentOutput, type WorkflowNode, type WorkflowEdge } from "@/lib/workflow";
 
 // LLM 配置：有 SILICONFLOW_API_KEY 时用免费模型，否则用 DeepSeek
 const llmProvider = process.env.SILICONFLOW_API_KEY
@@ -13,22 +14,8 @@ const llmProvider = process.env.SILICONFLOW_API_KEY
     });
 
 const llmModel = process.env.SILICONFLOW_API_KEY
-  ? "Qwen/Qwen2.5-7B-Instruct"
+  ? "Qwen/Qwen2.5-32B-Instruct"
   : "deepseek-chat";
-
-// 节点类型
-interface WorkflowNode {
-  id: string;
-  type: string;
-  position: { x: number; y: number };
-  data: Record<string, unknown>;
-}
-
-interface WorkflowEdge {
-  id: string;
-  source: string;
-  target: string;
-}
 
 // 单个节点执行结果
 interface NodeResult {
@@ -159,54 +146,4 @@ async function executeNode(
     default:
       return "未知节点类型";
   }
-}
-
-/**
- * 获取上游节点的输出
- */
-function getParentOutput(
-  nodeId: string,
-  edges: WorkflowEdge[],
-  variables: Record<string, string>
-): string {
-  const parentEdge = edges.find((e) => e.target === nodeId);
-  if (parentEdge && variables[parentEdge.source]) {
-    return variables[parentEdge.source];
-  }
-  return variables.input || "";
-}
-
-/**
- * 拓扑排序：按依赖关系确定执行顺序
- */
-function topologicalSort(nodes: WorkflowNode[], edges: WorkflowEdge[]): string[] {
-  const inDegree: Record<string, number> = {};
-  const adjList: Record<string, string[]> = {};
-
-  for (const node of nodes) {
-    inDegree[node.id] = 0;
-    adjList[node.id] = [];
-  }
-
-  for (const edge of edges) {
-    adjList[edge.source].push(edge.target);
-    inDegree[edge.target] = (inDegree[edge.target] || 0) + 1;
-  }
-
-  const queue: string[] = [];
-  for (const [id, deg] of Object.entries(inDegree)) {
-    if (deg === 0) queue.push(id);
-  }
-
-  const result: string[] = [];
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    result.push(current);
-    for (const next of adjList[current]) {
-      inDegree[next]--;
-      if (inDegree[next] === 0) queue.push(next);
-    }
-  }
-
-  return result;
 }

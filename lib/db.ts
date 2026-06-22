@@ -20,7 +20,8 @@ export async function initDb() {
 
   const dim = getEmbeddingDimension();
 
-  await sql`
+  // postgres 模板字符串不支持 DDL 动态插值，用 unsafe 拼接
+  await sql.unsafe(`
     CREATE TABLE IF NOT EXISTS documents (
       id SERIAL PRIMARY KEY,
       filename TEXT NOT NULL,
@@ -29,7 +30,7 @@ export async function initDb() {
       embedding vector(${dim}),
       created_at TIMESTAMP DEFAULT NOW()
     )
-  `;
+  `);
 
   // 向量索引（加速相似度检索）
   await sql`
