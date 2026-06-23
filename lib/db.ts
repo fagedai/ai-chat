@@ -48,6 +48,17 @@ export async function initDb() {
       updated_at TIMESTAMP DEFAULT NOW()
     )
   `;
+
+  // 对话历史表
+  await sql`
+    CREATE TABLE IF NOT EXISTS chats (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '新对话',
+      messages JSONB NOT NULL DEFAULT '[]',
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    )
+  `;
 }
 
 /**
@@ -177,4 +188,66 @@ export async function getWorkflow(id: number) {
  */
 export async function deleteWorkflow(id: number) {
   await sql`DELETE FROM workflows WHERE id = ${id}`;
+}
+
+// ========== 对话历史 CRUD ==========
+
+/**
+ * 保存对话（新建或更新）
+ * messages 为 useChat 的 UIMessage[] 数组
+ */
+export async function saveChat(
+  id: number | null,
+  title: string,
+  messages: unknown
+): Promise<number> {
+  if (id) {
+    const result = await sql`
+      UPDATE chats SET title = ${title}, messages = ${JSON.stringify(messages)}, updated_at = NOW()
+      WHERE id = ${id} RETURNING id
+    `;
+    return (result as unknown as Array<{ id: number }>)[0].id;
+  } else {
+    const result = await sql`
+      INSERT INTO chats (title, messages) VALUES (${title}, ${JSON.stringify(messages)})
+      RETURNING id
+    `;
+    return (result as unknown as Array<{ id: number }>)[0].id;
+  }
+}
+
+/**
+ * 获取所有对话列表（不返回完整消息，只返回摘要）
+ */
+export async function listChats() {
+  const results = await sql`
+    SELECT id, title, created_at, updated_at FROM chats ORDER BY updated_at DESC
+  `;
+  return results as unknown as Array<{
+    id: number;
+    title: string;
+    created_at: string;
+    updated_at: string;
+  }>;
+}
+
+/**
+ * 获取单个对话详情（含完整消息）
+ */
+export async function getChat(id: number) {
+  const results = await sql`SELECT * FROM chats WHERE id = ${id}`;
+  return (results as unknown as Array<{
+    id: number;
+    title: string;
+    messages: unknown;
+    created_at: string;
+    updated_at: string;
+  }>)[0] || null;
+}
+
+/**
+ * 删除对话
+ */
+export async function deleteChat(id: number) {
+  await sql`DELETE FROM chats WHERE id = ${id}`;
 }
