@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { initDb, insertChunk } from "@/lib/db";
+import { initDb, insertChunk, listDocuments } from "@/lib/db";
 import { getEmbedding } from "@/lib/embedding";
 import { chunkText } from "@/lib/chunker";
 import { sanitizeContent } from "@/lib/sanitizer";
@@ -36,10 +36,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: check.reason }, { status: 403 });
     }
 
-    // 4. 切片
+    // 4. 检查同名文件是否已存在
+    const existingDocs = await listDocuments();
+    if (existingDocs.some((d) => d.filename === file.name)) {
+      return NextResponse.json(
+        { error: `已存在同名文件「${file.name}」，请先删除同名文件再上传` },
+        { status: 409 }
+      );
+    }
+
+    // 5. 切片
     const chunks = chunkText(text);
 
-    // 5. 逐片向量化并存入数据库
+    // 6. 逐片向量化并存入数据库
     for (let i = 0; i < chunks.length; i++) {
       const embedding = await getEmbedding(chunks[i]);
       await insertChunk(file.name, i, chunks[i], embedding);

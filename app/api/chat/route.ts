@@ -31,6 +31,13 @@ export async function POST(req: Request) {
   // 1. 尝试从知识库检索相关内容
   let systemPrompt = "你是一个知识库问答助手。";
 
+  // RAG 检索结果（发送给前端展示为 thinking 面板）
+  let ragData: {
+    steps: Array<{ label: string; detail?: string }>;
+    sources: Array<{ index: number; filename: string; similarity: string; chunkIndex: number }>;
+    fallback: boolean;
+  } | null = null;
+
   try {
     const lastUserMsg = modelMessages.filter((m) => m.role === "user").pop();
     // AI SDK v6: content 是数组 [{type:"text", text:"..."}], 需提取文本
@@ -76,11 +83,39 @@ export async function POST(req: Request) {
 <reference>
 ${context}
 </reference>`;
+
+        // 记录 RAG 检索过程（前端展示为 thinking 面板）
+        ragData = {
+          steps: [
+            { label: "生成问题向量" },
+            { label: `向量检索：找到 ${candidates.length} 个候选片段` },
+            { label: `阈值过滤：保留 ${filtered.length} 个（≥${(SIMILARITY_THRESHOLD * 100).toFixed(0)}%）` },
+            { label: `重排序：精选 ${reranked.length} 个最相关片段` },
+          ],
+          sources: reranked.map((c, i) => ({
+            index: i + 1,
+            filename: c.filename,
+            similarity: `${(c.similarity * 100).toFixed(1)}%`,
+            chunkIndex: c.chunk_index + 1,
+          })),
+          fallback: false,
+        };
+      } else {
+        ragData = {
+          steps: [{ label: `知识库检索：未找到相似度 ≥ ${SIMILARITY_THRESHOLD * 100}% 的内容` }],
+          sources: [],
+          fallback: true,
+        };
       }
     }
   } catch (error) {
     // 如果数据库不可用，降级为普通对话（不阻断用户）
     console.warn("知识库检索失败，使用普通对话模式:", error);
+    ragData = {
+      steps: [{ label: "⚠️ 知识库检索失败，使用通用对话模式" }],
+      sources: [],
+      fallback: true,
+    };
   }
 
   // 2. 流式回答
@@ -90,5 +125,10 @@ ${context}
     messages: modelMessages,
   });
 
-  return result.toUIMessageStreamResponse();
+  return result.toUIMessageStreamResponse({
+    // 通过 messageMetadata 把 RAG 检索过程发给前端
+    messageMetadata: () => {
+      return ragData ? { ragRetrieval: ragData } : undefined;
+    },
+  });
 }

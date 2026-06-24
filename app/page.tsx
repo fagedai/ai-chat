@@ -9,6 +9,12 @@ import {
   PlusOutlined,
   MessageOutlined,
   DeleteOutlined,
+  BookOutlined,
+  FileSearchOutlined,
+  CheckCircleOutlined,
+  FileTextOutlined,
+  UpOutlined,
+  DownOutlined,
 } from "@ant-design/icons";
 import { Button, Popconfirm, Empty, Spin } from "antd";
 import { useSidebar } from "@/components/sidebar";
@@ -24,6 +30,73 @@ interface ChatSummary {
   updated_at: string;
 }
 
+// RAG 检索数据类型
+interface RagData {
+  steps: Array<{ label: string; detail?: string }>;
+  sources: Array<{
+    index: number;
+    filename: string;
+    similarity: string;
+    chunkIndex: number;
+  }>;
+  fallback: boolean;
+}
+
+// RAG 检索折叠面板（类似 thinking 模式）
+// 受控组件：展开/折叠状态由父组件管理，避免组件重建时丢失状态
+function RagRetrievalPanel({
+  data,
+  expanded,
+  onToggle,
+}: {
+  data: RagData;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <div className="mb-2 rounded-lg border border-zinc-200 bg-zinc-50 overflow-hidden text-sm">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-zinc-100 transition-colors"
+      >
+        <span className="text-zinc-500">
+          {data.fallback ? <FileSearchOutlined /> : <BookOutlined />}
+        </span>
+        <span className="font-medium text-zinc-600">
+          {data.fallback ? "知识库检索（未命中）" : "知识库检索"}
+        </span>
+        <span className="ml-auto text-zinc-400 text-xs flex items-center gap-1">
+          {expanded ? "收起" : "展开"}
+          {expanded ? <UpOutlined style={{ fontSize: 10 }} /> : <DownOutlined style={{ fontSize: 10 }} />}
+        </span>
+      </button>
+      {expanded && (
+        <div className="px-3 py-2 border-t border-zinc-200 space-y-1">
+          {data.steps.map((step, i) => (
+            <div key={i} className="text-zinc-500 text-xs flex items-start gap-1">
+              <CheckCircleOutlined className="text-green-500 shrink-0 mt-0.5" style={{ fontSize: 12 }} />
+              <span>{step.label}</span>
+            </div>
+          ))}
+          {data.sources.length > 0 && (
+            <div className="pt-1">
+              <div className="text-zinc-400 text-xs mb-1 flex items-center gap-1">
+                <FileTextOutlined style={{ fontSize: 12 }} />
+                参考来源：
+              </div>
+              {data.sources.map((src) => (
+                <div key={src.index} className="text-zinc-500 text-xs pl-2">
+                  [{src.index}] {src.filename} · 第{src.chunkIndex}段 · {src.similarity}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Chat() {
   const { messages, sendMessage, status, setMessages } = useChat();
   const [input, setInput] = useState("");
@@ -31,6 +104,9 @@ export default function Chat() {
   const [currentChatId, setCurrentChatId] = useState<number | null>(null);
   const [loadingList, setLoadingList] = useState(false);
   const [loadingChat, setLoadingChat] = useState(false);
+  // RAG 面板展开状态：记录用户手动操作过的消息 ID
+  // 未记录的消息使用默认逻辑：streaming 时展开，否则折叠
+  const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({});
 
   const { sidebarOpen } = useSidebar();
 
@@ -134,11 +210,13 @@ export default function Chat() {
         if (typeof rawMessages === "string") {
           rawMessages = JSON.parse(rawMessages);
         }
-        // 确保每条消息都有 parts 字段
-        const safeMessages = (rawMessages || []).map((m: { id?: string; role?: string; parts?: unknown[]; content?: string }, i: number) => ({
+        // 确保每条消息都有 parts 字段，同时保留 metadata（RAG 检索数据）
+        const safeMessages = (rawMessages || []).map((m: { id?: string; role?: string; parts?: unknown[]; content?: string; metadata?: unknown }, i: number) => ({
           id: m.id || `msg-${Date.now()}-${i}`,
           role: m.role || "user",
           parts: Array.isArray(m.parts) ? m.parts : (m.content ? [{ type: "text", text: m.content }] : []),
+          // 保留 metadata（包含 RAG 检索过程数据）
+          ...(m.metadata ? { metadata: m.metadata } : {}),
         }));
         setMessages(safeMessages);
         setCurrentChatId(id);
@@ -171,18 +249,29 @@ export default function Chat() {
 
   // 把 useChat 的消息映射成 Bubble.List 需要的 items 格式
   // parts 可能在从数据库恢复时为 undefined，需做防御性检查
-  const bubbleItems = messages.map((m) => ({
-    key: m.id,
-    role: m.role,
-    content: (m.parts || [])
-      .filter((p) => p.type === "text")
-      .map((p) => (p as { type: "text"; text: string }).text)
-      .join(""),
-    streaming:
+  const bubbleItems = messages.map((m) => {
+    const isLastAssistant =
       m.role === "assistant" &&
-      m.id === messages[messages.length - 1]?.id &&
-      status === "streaming",
-  }));
+      m.id === messages[messages.length - 1]?.id;
+    // 面板展开逻辑：用户手动操作过用用户值，否则 streaming 时展开、否则折叠
+    const panelExpanded =
+      m.id in expandedPanels
+        ? expandedPanels[m.id]
+        : isLastAssistant && status === "streaming";
+    return {
+      key: m.id,
+      role: m.role,
+      content: (m.parts || [])
+        .filter((p: { type: string }) => p.type === "text")
+        .map((p: { type: string; text?: string }) => p.text || "")
+        .join(""),
+      streaming: isLastAssistant && status === "streaming",
+      // RAG 检索数据（来自后端 messageMetadata）
+      ragRetrieval: (m as { metadata?: { ragRetrieval?: RagData } }).metadata
+        ?.ragRetrieval,
+      panelExpanded,
+    };
+  });
 
   // 发送后、AI 开始回复前，显示加载动画
   if (status === "submitted") {
@@ -191,6 +280,8 @@ export default function Chat() {
       role: "assistant",
       content: "",
       streaming: false,
+      ragRetrieval: undefined,
+      panelExpanded: false,
     });
   }
 
@@ -301,7 +392,13 @@ export default function Chat() {
                     avatar: <UserOutlined />,
                     shape: "round",
                   },
-                  assistant: (item) => ({
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                  assistant: (item: {
+                    key: string | number;
+                    streaming?: boolean;
+                    ragRetrieval?: RagData;
+                    panelExpanded?: boolean;
+                  }) => ({
                     placement: "start",
                     avatar: <RobotOutlined />,
                     loading: item.key === "loading",
@@ -310,21 +407,36 @@ export default function Chat() {
                         ? { effect: "typing", step: 5, interval: 50 }
                         : undefined,
                     contentRender: (content: React.ReactNode) => (
-                      <div className="markdown-body">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          rehypePlugins={[rehypeHighlight]}
-                          components={{
-                            table: ({ children }) => (
-                              <div className="overflow-x-auto my-2">
-                                {children}
-                              </div>
-                            ),
-                          }}
-                        >
-                          {typeof content === "string" ? content : ""}
-                        </ReactMarkdown>
-                      </div>
+                      <>
+                        {/* RAG 检索折叠面板 */}
+                        {item.ragRetrieval && (
+                          <RagRetrievalPanel
+                            data={item.ragRetrieval}
+                            expanded={!!item.panelExpanded}
+                            onToggle={() =>
+                              setExpandedPanels((prev) => ({
+                                ...prev,
+                                [item.key]: !item.panelExpanded,
+                              }))
+                            }
+                          />
+                        )}
+                        <div className="markdown-body">
+                          <ReactMarkdown
+                            remarkPlugins={[remarkGfm]}
+                            rehypePlugins={[rehypeHighlight]}
+                            components={{
+                              table: ({ children }) => (
+                                <div className="overflow-x-auto my-2">
+                                  {children}
+                                </div>
+                              ),
+                            }}
+                          >
+                            {typeof content === "string" ? content : ""}
+                          </ReactMarkdown>
+                        </div>
+                      </>
                     ),
                   }),
                 }}

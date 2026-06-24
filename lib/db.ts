@@ -86,21 +86,25 @@ export async function searchSimilar(
   limit = 3
 ) {
   // pgvector 要求向量格式为 "[0.1, 0.2, ...]"
+  // 注意：Supabase 上 ORDER BY embedding <=> vector 会返回空结果（ivfflat 索引兼容性问题）
+  // 解决方案：去掉 ORDER BY，在应用层按 similarity 排序
   const vectorStr = JSON.stringify(queryEmbedding);
   const results = await sql`
     SELECT id, filename, chunk_index, content,
            1 - (embedding <=> ${vectorStr}::vector) AS similarity
     FROM documents
-    ORDER BY embedding <=> ${vectorStr}::vector
-    LIMIT ${limit}
   `;
-  return results as unknown as Array<{
+  const typed = results as unknown as Array<{
     id: number;
     filename: string;
     chunk_index: number;
     content: string;
     similarity: number;
   }>;
+  // 应用层排序 + 截取 top-K
+  return typed
+    .sort((a, b) => b.similarity - a.similarity)
+    .slice(0, limit);
 }
 
 /**
