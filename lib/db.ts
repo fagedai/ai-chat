@@ -268,15 +268,18 @@ export async function saveChat(
   title: string,
   messages: unknown
 ): Promise<number> {
+  // postgres.js 对 JSONB 列自动序列化，不需要 JSON.stringify
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const msgJson = sql.json(messages as any);
   if (id) {
     const result = await sql`
-      UPDATE chats SET title = ${title}, messages = ${JSON.stringify(messages)}, updated_at = NOW()
+      UPDATE chats SET title = ${title}, messages = ${msgJson}, updated_at = NOW()
       WHERE id = ${id} RETURNING id
     `;
     return (result as unknown as Array<{ id: number }>)[0].id;
   } else {
     const result = await sql`
-      INSERT INTO chats (title, messages) VALUES (${title}, ${JSON.stringify(messages)})
+      INSERT INTO chats (title, messages) VALUES (${title}, ${msgJson})
       RETURNING id
     `;
     return (result as unknown as Array<{ id: number }>)[0].id;
