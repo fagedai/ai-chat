@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { getEmbedding } from "@/lib/embedding";
 import { searchSimilar, initDb } from "@/lib/db";
-import { rerank } from "@/lib/rerank";
+import { rerank, type HybridChunk } from "@/lib/rerank";
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
 
@@ -32,8 +32,10 @@ describeOrSkip("RAG 完整链路集成测试", () => {
       console.log("   部署后需重新上传文档以匹配新维度");
     }
 
-    // 3. 阈值过滤 + 重排序
-    const filtered = candidates.filter((c) => c.similarity >= 0.5);
+    // 3. 阈值过滤 + 重排序（补全 bm25_score 以适配 HybridChunk）
+    const filtered: HybridChunk[] = candidates
+      .filter((c) => c.similarity >= 0.5)
+      .map((c) => ({ ...c, bm25_score: 0 }));
     const reranked = rerank(filtered, question).slice(0, 3);
     console.log("✅ Step 3: 重排序完成，精选数:", reranked.length);
 

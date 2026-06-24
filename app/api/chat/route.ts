@@ -1,8 +1,9 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { streamText, convertToModelMessages, type ModelMessage } from "ai";
 import { getEmbedding } from "@/lib/embedding";
-import { searchSimilar } from "@/lib/db";
+import { hybridSearch } from "@/lib/hybrid";
 import { rerank } from "@/lib/rerank";
+import { summarizeMessages } from "@/lib/summarize";
 
 // LLM 配置：有 SILICONFLOW_API_KEY 时用免费模型，否则用 DeepSeek
 const llmProvider = process.env.SILICONFLOW_API_KEY
@@ -23,6 +24,12 @@ const llmModel = process.env.SILICONFLOW_API_KEY
 const SIMILARITY_THRESHOLD = 0.5; // 相似度低于 50% 的片段不引用
 const RETRIEVE_TOP_K = 10;        // 粗检索数量（用于重排序）
 const RERANK_TOP_N = 3;           // 重排序后保留数量
+
+// ---- 对话上下文配置 ----
+// 发给 LLM 的最大轮数（每轮 = user + assistant = 2条消息）
+// 超过则早期消息做摘要注入 system prompt，节省 token
+const MAX_CONTEXT_ROUNDS = 10;
+const MAX_CONTEXT_MESSAGES = MAX_CONTEXT_ROUNDS * 2;
 
 export async function POST(req: Request) {
   const { messages } = await req.json();
@@ -56,13 +63,22 @@ export async function POST(req: Request) {
     if (userQuestion) {
       const questionEmbedding = await getEmbedding(userQuestion);
 
-      // 粗检索：先取 top-10 个候选
-      const candidates = await searchSimilar(questionEmbedding, RETRIEVE_TOP_K);
+      // 混合检索：并行执行向量检索 + BM25 关键词检索，合并去重
+      const { chunks: candidates, diagnostics } = await hybridSearch(
+        questionEmbedding,
+        userQuestion,
+        RETRIEVE_TOP_K,
+        RETRIEVE_TOP_K
+      );
 
-      // 阈值过滤：只保留相似度 >= 50% 的
-      const filtered = candidates.filter((c) => c.similarity >= SIMILARITY_THRESHOLD);
+      // 阈值过滤：向量检索和 BM25 结果都需过阈值
+      // - 向量结果：similarity >= 0.5
+      // - BM25 独有结果（similarity=0）：bm25_score >= 0.3 才保留
+      const filtered = candidates.filter(
+        (c) => c.similarity >= SIMILARITY_THRESHOLD || c.bm25_score >= 0.3
+      );
 
-      // 重排序：结合向量相似度 + 关键词命中率，综合打分
+      // 重排序：向量 50% + BM25 20% + 关键词命中 30%，综合打分
       const reranked = rerank(filtered, userQuestion).slice(0, RERANK_TOP_N);
 
       if (reranked.length > 0) {
@@ -88,9 +104,25 @@ ${context}
         ragData = {
           steps: [
             { label: "生成问题向量" },
-            { label: `向量检索：找到 ${candidates.length} 个候选片段` },
-            { label: `阈值过滤：保留 ${filtered.length} 个（≥${(SIMILARITY_THRESHOLD * 100).toFixed(0)}%）` },
-            { label: `重排序：精选 ${reranked.length} 个最相关片段` },
+            {
+              label: diagnostics.vectorError
+                ? `⚠️ 向量检索失败：${diagnostics.vectorError}`
+                : `向量检索：找到 ${diagnostics.vectorCount} 个候选片段`,
+              detail: `语义相似度 top-${RETRIEVE_TOP_K}`,
+            },
+            {
+              label: diagnostics.bm25Error
+                ? `⚠️ BM25 检索失败：${diagnostics.bm25Error}`
+                : `BM25 关键词检索：找到 ${diagnostics.bm25Count} 个候选片段`,
+              detail: `精准匹配专有名词 / 错误码`,
+            },
+            {
+              label: `合并去重：${diagnostics.mergedCount} 个独立片段（去除 ${diagnostics.duplicatesRemoved} 个重复）`,
+            },
+            {
+              label: `阈值过滤：保留 ${filtered.length} 个（向量≥50% 或 BM25≥30%）`,
+            },
+            { label: `重排序：精选 ${reranked.length} 个最相关片段（向量50%+BM25 20%+关键词30%）` },
           ],
           sources: reranked.map((c, i) => ({
             index: i + 1,
@@ -102,7 +134,18 @@ ${context}
         };
       } else {
         ragData = {
-          steps: [{ label: `知识库检索：未找到相似度 ≥ ${SIMILARITY_THRESHOLD * 100}% 的内容` }],
+          steps: [
+            { label: `知识库检索：未找到相关内容（向量相似度<50% 且 BM25<30%）` },
+            {
+              label: `尝试检索：向量 ${diagnostics.vectorCount} 个 + BM25 ${diagnostics.bm25Count} 个，均不达标`,
+            },
+            ...(diagnostics.vectorError
+              ? [{ label: `⚠️ 向量检索异常：${diagnostics.vectorError}` }]
+              : []),
+            ...(diagnostics.bm25Error
+              ? [{ label: `⚠️ BM25 检索异常：${diagnostics.bm25Error}` }]
+              : []),
+          ],
           sources: [],
           fallback: true,
         };
@@ -118,11 +161,25 @@ ${context}
     };
   }
 
-  // 2. 流式回答
+  // 2. 对话上下文截断：超10轮时早期消息做摘要
+  let contextMessages = modelMessages;
+  let historySummary = "";
+  if (modelMessages.length > MAX_CONTEXT_MESSAGES) {
+    const splitAt = modelMessages.length - MAX_CONTEXT_MESSAGES;
+    const oldMessages = modelMessages.slice(0, splitAt);
+    contextMessages = modelMessages.slice(splitAt);
+    historySummary = summarizeMessages(oldMessages);
+  }
+
+  // 3. 流式回答
+  const finalSystemPrompt = historySummary
+    ? `${systemPrompt}\n\n${historySummary}`
+    : systemPrompt;
+
   const result = streamText({
     model: llmProvider.chat(llmModel),
-    system: systemPrompt,
-    messages: modelMessages,
+    system: finalSystemPrompt,
+    messages: contextMessages,
   });
 
   return result.toUIMessageStreamResponse({

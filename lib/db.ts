@@ -108,6 +108,69 @@ export async function searchSimilar(
 }
 
 /**
+ * BM25 关键词检索：基于 PostgreSQL ts_rank 实现 BM25 评分
+ * 用于混合检索，精准匹配专有名词（如 E-1002、SLA）
+ * - 使用 simple 配置做大小写不敏感匹配
+ * - 对中文内容额外用 ILIKE 兜底（pg simple 配置不切分中文）
+ */
+export async function searchBM25(
+  query: string,
+  keywords: string[],
+  limit = 10
+) {
+  if (!keywords.length) return [];
+
+  // 1. 构建 ts_query（simple 配置，按空格分词，大小写不敏感）
+  const tsQuery = keywords.join(" | ");
+
+  // 2. 同时用 ILIKE 匹配中文关键词（simple 配置无法切分中文）
+  const ilikeConditions = keywords
+    .map((_, i) => `content ILIKE $${i + 1}`)
+    .join(" OR ");
+  const ilikeParams = keywords.map((kw) => `%${kw}%`);
+
+  // 3. 综合查询：ts_rank + ILIKE 命中数作为 BM25 近似得分
+  // 注意：PostgreSQL ORDER BY 不能引用同层 SELECT 别名做运算，需用子查询包一层
+  const results = await sql.unsafe(
+    `
+    SELECT *, (ts_score + keyword_hit_rate) AS bm25_total FROM (
+      SELECT
+        id, filename, chunk_index, content,
+        ts_rank(to_tsvector('simple', content), plainto_tsquery('simple', $${keywords.length + 1})) AS ts_score,
+        (
+          ${keywords
+            .map((_, i) => `CASE WHEN content ILIKE $${i + 1} THEN 1 ELSE 0 END`)
+            .join(" + ")}
+        )::float / ${keywords.length} AS keyword_hit_rate
+      FROM documents
+      WHERE
+        to_tsvector('simple', content) @@ plainto_tsquery('simple', $${keywords.length + 1})
+        OR ${ilikeConditions}
+    ) sub
+    ORDER BY bm25_total DESC
+    LIMIT ${limit}
+    `,
+    [...ilikeParams, tsQuery]
+  );
+
+  // 归一化为统一格式，bm25_score = ts_score + keyword_hit_rate
+  return (results as unknown as Array<{
+    id: number;
+    filename: string;
+    chunk_index: number;
+    content: string;
+    ts_score: number;
+    keyword_hit_rate: number;
+  }>).map((r) => ({
+    id: r.id,
+    filename: r.filename,
+    chunk_index: r.chunk_index,
+    content: r.content,
+    bm25_score: Math.min((r.ts_score || 0) + (r.keyword_hit_rate || 0), 1),
+  }));
+}
+
+/**
  * 获取所有已上传的文档列表（按文件名分组）
  */
 export async function listDocuments() {
