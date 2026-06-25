@@ -108,11 +108,11 @@ export default function UploadPage() {
   };
 
   return (
-    <div className="flex flex-col h-screen">
-      <header className="flex items-center justify-between h-14 px-6 border-b border-zinc-200 bg-white shrink-0">
+    <div className="flex flex-col h-full">
+      <header className="flex items-center justify-between h-14 px-4 md:px-6 border-b border-zinc-200 bg-white shrink-0">
         <h1 className="text-base font-semibold">
           知识库管理{" "}
-          <span className="text-xs font-normal text-zinc-400 ml-1">
+          <span className="hidden md:inline text-xs font-normal text-zinc-400 ml-1">
             上传文档，构建 RAG 知识问答
           </span>
         </h1>
@@ -125,7 +125,7 @@ export default function UploadPage() {
         </button>
       </header>
 
-      <main className="flex-1 overflow-y-auto p-6">
+      <main className="flex-1 overflow-y-auto p-4 md:p-6">
         <div className="max-w-2xl mx-auto space-y-6">
           {/* 上传区域 */}
           <div className="border-2 border-dashed border-zinc-300 rounded-xl p-8 text-center hover:border-blue-400 transition-colors relative">

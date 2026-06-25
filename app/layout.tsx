@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
 import { SidebarProvider, HistoryToggle } from "@/components/sidebar";
+import { MobileNav } from "@/components/mobile-nav";
 import "./globals.css";
 import Link from "next/link";
 
@@ -34,8 +35,8 @@ export default function RootLayout({
         <AntdRegistry>
           <SidebarProvider>
             <div className="flex h-full">
-              {/* 左侧导航栏 */}
-              <nav className="w-14 border-r border-zinc-200 bg-white flex flex-col items-center py-4 gap-4 shrink-0">
+              {/* 左侧导航栏（桌面端） */}
+              <nav className="hidden md:flex w-14 border-r border-zinc-200 bg-white flex-col items-center py-4 gap-4 shrink-0">
                 <Link
                   href="/"
                   className="w-10 h-10 rounded-lg flex items-center justify-center text-zinc-500 hover:bg-blue-50 hover:text-blue-500 transition-colors"
@@ -74,9 +75,12 @@ export default function RootLayout({
                 </Link>
               </nav>
 
-              {/* 主内容区 */}
-              <div className="flex-1 min-w-0">{children}</div>
+              {/* 主内容区：移动端留出底部导航高度 */}
+              <div className="flex-1 min-w-0 pb-12 md:pb-0">{children}</div>
             </div>
+
+            {/* 底部导航栏（移动端） */}
+            <MobileNav />
           </SidebarProvider>
         </AntdRegistry>
       </body>

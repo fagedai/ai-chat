@@ -22,7 +22,14 @@ const SidebarContext = createContext<SidebarContextType>({
 
 // ========== Provider ==========
 export function SidebarProvider({ children }: { children: ReactNode }) {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // 移动端默认收起侧边栏，桌面端默认展开
+  const [sidebarOpen, setSidebarOpen] = useState(() => {
+    if (typeof window !== "undefined") {
+      return window.innerWidth >= 768;
+    }
+    return true;
+  });
+
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => !prev);
   }, []);
@@ -40,8 +47,23 @@ export function useSidebar() {
 }
 
 // ========== 历史切换按钮（放在导航栏中） ==========
-export function HistoryToggle() {
+export function HistoryToggle({ mobile = false }: { mobile?: boolean }) {
   const { sidebarOpen, toggleSidebar } = useSidebar();
+
+  if (mobile) {
+    return (
+      <button
+        onClick={toggleSidebar}
+        className={`flex flex-col items-center justify-center w-16 h-full transition-colors ${
+          sidebarOpen ? "text-blue-500" : "text-zinc-400"
+        }`}
+      >
+        <HistoryOutlined style={{ fontSize: 22 }} />
+        <span className="text-[10px] mt-0.5">历史</span>
+      </button>
+    );
+  }
+
   return (
     <button
       onClick={toggleSidebar}

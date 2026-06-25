@@ -174,7 +174,7 @@ export default function Chat() {
   // 未记录的消息使用默认逻辑：streaming 时展开，否则折叠
   const [expandedPanels, setExpandedPanels] = useState<Record<string, boolean>>({});
 
-  const { sidebarOpen } = useSidebar();
+  const { sidebarOpen, toggleSidebar } = useSidebar();
 
   const isLoading = status === "submitted" || status === "streaming";
 
@@ -313,6 +313,10 @@ export default function Chat() {
       console.error("加载对话失败:", e);
     } finally {
       setLoadingChat(false);
+      // 移动端选择对话后自动收起侧边栏
+      if (typeof window !== "undefined" && window.innerWidth < 768 && sidebarOpen) {
+        toggleSidebar();
+      }
     }
   };
 
@@ -387,12 +391,20 @@ export default function Chat() {
   }, [messages, status, expandedPanels]);
 
   return (
-    <div className="flex h-screen">
-      {/* 左侧对话历史侧边栏（可收缩） */}
+    <div className="flex h-full">
+      {/* 移动端遮罩层 */}
+      {sidebarOpen && (
+        <div
+          className="md:hidden fixed inset-0 bg-black/30 z-30"
+          onClick={toggleSidebar}
+        />
+      )}
+
+      {/* 左侧对话历史侧边栏（桌面端可收缩，移动端抽屉覆盖） */}
       <aside
         className={`${
           sidebarOpen ? "w-64" : "w-0"
-        } shrink-0 border-r border-zinc-200 bg-zinc-50 flex flex-col overflow-hidden transition-all duration-300`}
+        } shrink-0 border-r border-zinc-200 bg-zinc-50 flex flex-col overflow-hidden transition-all duration-300 fixed md:relative top-0 bottom-12 md:bottom-0 left-0 z-40 md:z-auto`}
       >
         {/* 新建对话按钮 */}
         <div className="p-3 border-b border-zinc-200">

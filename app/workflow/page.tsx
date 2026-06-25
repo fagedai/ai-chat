@@ -39,6 +39,8 @@ import {
   ToolOutlined,
   PlayCircleFilled,
   StopOutlined,
+  AppstoreOutlined,
+  ProfileOutlined,
 } from "@ant-design/icons";
 
 const { TextArea } = Input;
@@ -162,6 +164,8 @@ function WorkflowCanvas() {
   const [workflowName, setWorkflowName] = useState("未命名工作流");
   const [savedWorkflows, setSavedWorkflows] = useState<Array<{ id: number; name: string }>>([]);
   const abortRef = useRef<AbortController | null>(null);
+  // 移动端面板状态：null=只看画布，'nodes'=左侧节点库，'properties'=右侧属性
+  const [mobilePanel, setMobilePanel] = useState<"nodes" | "properties" | null>(null);
 
   // 连线处理
   const onConnect = useCallback(
@@ -207,6 +211,10 @@ function WorkflowCanvas() {
   // 点击节点 → 选中（后续给右侧面板用）
   const onNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
     setSelectedNode(node);
+    // 移动端点击节点自动打开属性面板
+    if (typeof window !== "undefined" && window.innerWidth < 768) {
+      setMobilePanel("properties");
+    }
   }, []);
 
   // 运行工作流（SSE 实时推送状态）
@@ -394,27 +402,36 @@ function WorkflowCanvas() {
   return (
     <div className="h-full flex flex-col">
       {/* 顶部工具栏 */}
-      <div className="h-14 border-b border-zinc-200 bg-white flex items-center px-4 gap-2 shrink-0">
+      <div className="h-14 border-b border-zinc-200 bg-white flex items-center px-2 md:px-4 gap-1 md:gap-2 shrink-0 overflow-x-auto">
+        {/* 移动端面板切换按钮 */}
+        <Button
+          className="md:hidden"
+          type={mobilePanel === "nodes" ? "primary" : "default"}
+          icon={<AppstoreOutlined />}
+          onClick={() => setMobilePanel(mobilePanel === "nodes" ? null : "nodes")}
+          size="small"
+        />
         <Input
           value={workflowName}
           onChange={(e) => setWorkflowName(e.target.value)}
           placeholder="工作流名称"
           variant="borderless"
-          className="!w-40 !text-sm !font-semibold"
+          className="!w-24 md:!w-40 !text-sm !font-semibold"
         />
         {workflowId && (
           <Text type="secondary" className="!text-xs">#{workflowId}</Text>
         )}
-        <Divider type="vertical" />
-        <Space size={8}>
-          <Button icon={<SaveOutlined />} onClick={saveWorkflow} type="primary">
-            保存
+        <Divider type="vertical" className="hidden md:block" />
+        <Space size={4}>
+          <Button icon={<SaveOutlined />} onClick={saveWorkflow} type="primary" size="small">
+            <span className="hidden md:inline">保存</span>
           </Button>
           <Button
             icon={<FolderOpenOutlined />}
             onClick={() => { loadWorkflowList(); setLoadModalOpen(true); }}
+            size="small"
           >
-            加载
+            <span className="hidden md:inline">加载</span>
           </Button>
           <Button
             icon={isRunning ? <StopOutlined /> : <PlayCircleOutlined />}
@@ -422,17 +439,26 @@ function WorkflowCanvas() {
             disabled={isRunning}
             type={isRunning ? "default" : "primary"}
             danger={!isRunning}
+            size="small"
           >
-            {isRunning ? "运行中..." : "运行"}
+            <span className="hidden md:inline">{isRunning ? "运行中..." : "运行"}</span>
           </Button>
-          <Button icon={<PlusOutlined />} onClick={clearCanvas}>
-            新建
+          <Button icon={<PlusOutlined />} onClick={clearCanvas} size="small">
+            <span className="hidden md:inline">新建</span>
           </Button>
         </Space>
         <div className="flex-1" />
-        <Text type="secondary" className="!text-xs">
+        <Text type="secondary" className="hidden md:inline !text-xs">
           {nodes.length} 个节点 · {edges.length} 条连线
         </Text>
+        {/* 移动端右侧面板切换按钮 */}
+        <Button
+          className="md:hidden"
+          type={mobilePanel === "properties" ? "primary" : "default"}
+          icon={<ProfileOutlined />}
+          onClick={() => setMobilePanel(mobilePanel === "properties" ? null : "properties")}
+          size="small"
+        />
       </div>
 
       {/* 加载工作流弹窗 */}
@@ -484,9 +510,17 @@ function WorkflowCanvas() {
       </Modal>
 
       {/* 三栏布局 */}
-      <div className="flex-1 flex min-h-0">
-        {/* 左侧：节点库 */}
-        <div className="w-48 border-r border-zinc-200 bg-white p-3 shrink-0 overflow-y-auto">
+      <div className="flex-1 flex min-h-0 relative">
+        {/* 移动端遮罩层 */}
+        {mobilePanel && (
+          <div
+            className="md:hidden fixed inset-0 bg-black/30 z-30"
+            onClick={() => setMobilePanel(null)}
+          />
+        )}
+
+        {/* 左侧：节点库（桌面端常驻，移动端抽屉） */}
+        <div className={`w-48 border-r border-zinc-200 bg-white p-3 shrink-0 overflow-y-auto hidden md:block ${mobilePanel === "nodes" ? "!fixed !block top-14 bottom-12 left-0 z-40 !w-64" : ""}`}>
           <div className="text-xs font-semibold text-zinc-500 mb-3 uppercase">节点库</div>
 
           <NodeLibraryItem type="startNode" label="开始" color="green" />
@@ -533,8 +567,8 @@ function WorkflowCanvas() {
           </ReactFlow>
         </div>
 
-        {/* 右侧：属性 + 输出面板 */}
-        <div className="w-64 border-l border-zinc-200 bg-white p-3 shrink-0 overflow-y-auto">
+        {/* 右侧：属性 + 输出面板（桌面端常驻，移动端抽屉） */}
+        <div className={`w-64 border-l border-zinc-200 bg-white p-3 shrink-0 overflow-y-auto hidden md:block ${mobilePanel === "properties" ? "!fixed !block top-14 bottom-12 right-0 z-40 !w-72" : ""}`}>
           <div className="text-xs font-semibold text-zinc-500 mb-3 uppercase">
             {selectedNode ? "属性配置" : "运行日志"}
           </div>
