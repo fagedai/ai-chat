@@ -519,10 +519,8 @@ export default function Chat() {
                     placement: "start",
                     avatar: <RobotOutlined />,
                     loading: item.key === "loading",
-                    typing:
-                      item.key !== "loading"
-                        ? { effect: "typing", step: 5, interval: 50 }
-                        : undefined,
+                    // 去掉 Bubble 自带的 typing 动画，由 MemoMarkdown 分段冻结渲染接管
+                    // typing 效果会导致每个 token 都触发全量重渲染，造成严重卡顿
                     contentRender: (content: React.ReactNode) => (
                       <>
                         {/* RAG 检索折叠面板 */}
