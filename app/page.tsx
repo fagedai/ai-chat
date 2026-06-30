@@ -164,7 +164,7 @@ const MemoMarkdown = memo(function MemoMarkdown({
 });
 
 export default function Chat() {
-  const { messages, sendMessage, status, setMessages } = useChat();
+  const { messages, sendMessage, status, setMessages, stop } = useChat();
   const [input, setInput] = useState("");
   const [chatList, setChatList] = useState<ChatSummary[]>([]);
   const [currentChatId, setCurrentChatId] = useState<number | null>(null);
@@ -183,6 +183,26 @@ export default function Chat() {
   const currentChatIdRef = useRef(currentChatId);
   // 消息列表滚动容器 ref（用于加载历史对话后自动滚动到底部）
   const chatMainRef = useRef<HTMLElement>(null);
+  // 用户是否在底部附近（用于流式时判断是否自动滚动）
+  const isNearBottomRef = useRef(true);
+  // 上一轮消息数量（用于判断是否有新消息加入）
+  const prevMsgCountRef = useRef(messages.length);
+
+  // 滚动到底部
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = "smooth") => {
+    chatMainRef.current?.scrollTo({
+      top: chatMainRef.current.scrollHeight,
+      behavior,
+    });
+  }, []);
+
+  // 监听滚动位置，记录用户是否在底部附近（100px 阈值）
+  const handleScroll = useCallback(() => {
+    const el = chatMainRef.current;
+    if (!el) return;
+    const { scrollTop, scrollHeight, clientHeight } = el;
+    isNearBottomRef.current = scrollHeight - scrollTop - clientHeight < 100;
+  }, []);
 
   // 保持 ref 与 state 同步
   useEffect(() => {
@@ -243,6 +263,20 @@ export default function Chat() {
     fetchChatList();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 自动滚动：新消息加入时滚到底部，流式更新时在底部附近也跟着滚
+  useEffect(() => {
+    const prevCount = prevMsgCountRef.current;
+    const newCount = messages.length;
+    if (newCount > prevCount) {
+      // 有新消息加入（用户发送 / AI 开始回复）→ 立即滚到底部
+      requestAnimationFrame(() => scrollToBottom());
+    } else if (isLoading && isNearBottomRef.current) {
+      // 流式中内容增长，且用户在底部附近 → 平滑跟随
+      requestAnimationFrame(() => scrollToBottom("auto"));
+    }
+    prevMsgCountRef.current = newCount;
+  }, [messages, isLoading, scrollToBottom]);
 
   // 自动保存：检测 AI 回复完成（streaming → ready）
   useEffect(() => {
@@ -474,7 +508,7 @@ export default function Chat() {
         </header>
 
         {/* 消息列表 */}
-        <main ref={chatMainRef} className="flex-1 overflow-y-auto px-4 py-6">
+        <main ref={chatMainRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-4 py-6">
           <div className="max-w-2xl mx-auto">
             {loadingChat ? (
               <div className="flex justify-center items-center h-[60vh]">
@@ -546,6 +580,7 @@ export default function Chat() {
               value={input}
               onChange={setInput}
               onSubmit={onSubmit}
+              onCancel={stop}
               loading={isLoading}
               placeholder="输入消息，按 Enter 发送..."
             />
