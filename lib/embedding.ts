@@ -27,6 +27,31 @@ async function getCloudEmbedding(text: string): Promise<number[]> {
   return data.data[0].embedding;
 }
 
+// 云端批量 Embedding（硅基流动）
+// 一次 API 调用处理多条文本，避免逐条请求的延迟和速率限制
+async function getCloudEmbeddings(texts: string[]): Promise<number[][]> {
+  const res = await fetch("https://api.siliconflow.cn/v1/embeddings", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.SILICONFLOW_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: "BAAI/bge-large-zh-v1.5",
+      input: texts,
+      encoding_format: "float",
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`Embedding API 失败: ${res.status}`);
+  }
+  const data = await res.json();
+  // API 返回的顺序与输入一致，按 index 排序确保对齐
+  return (data.data as Array<{ embedding: number[]; index: number }>)
+    .sort((a, b) => a.index - b.index)
+    .map((d) => d.embedding);
+}
+
 // 本地 Embedding（@xenova/transformers）
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let embedder: any = null;
@@ -63,6 +88,19 @@ export async function getEmbedding(text: string): Promise<number[]> {
     return getCloudEmbedding(text);
   }
   return getLocalEmbedding(text);
+}
+
+/**
+ * 批量向量化（用于文件上传，一次性处理所有切片）
+ * - 云端：单次 API 调用发送全部文本，避免逐条请求
+ * - 本地：并行 Promise.all 处理
+ */
+export async function getEmbeddings(texts: string[]): Promise<number[][]> {
+  if (process.env.SILICONFLOW_API_KEY) {
+    return getCloudEmbeddings(texts);
+  }
+  // 本地模型并行处理
+  return Promise.all(texts.map((text) => getLocalEmbedding(text)));
 }
 
 /**

@@ -90,9 +90,12 @@ export async function searchSimilar(
   // 解决方案：去掉 ORDER BY，在应用层按 similarity 排序
   const vectorStr = JSON.stringify(queryEmbedding);
   const results = await sql`
-    SELECT id, filename, chunk_index, content,
-           1 - (embedding <=> ${vectorStr}::vector) AS similarity
-    FROM documents
+    SELECT * FROM (
+      SELECT id, filename, chunk_index, content,
+             1 - (embedding <=> ${vectorStr}::vector) AS similarity
+      FROM documents
+    ) AS sub
+    WHERE similarity >= 0.1
   `;
   const typed = results as unknown as Array<{
     id: number;

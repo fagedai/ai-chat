@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { initDb, insertChunk, listDocuments } from "@/lib/db";
-import { getEmbedding } from "@/lib/embedding";
+import { getEmbeddings } from "@/lib/embedding";
 import { chunkText } from "@/lib/chunker";
 import { sanitizeContent } from "@/lib/sanitizer";
 import mammoth from "mammoth";
@@ -48,11 +48,15 @@ export async function POST(req: NextRequest) {
     // 5. 切片
     const chunks = chunkText(text);
 
-    // 6. 逐片向量化并存入数据库
-    for (let i = 0; i < chunks.length; i++) {
-      const embedding = await getEmbedding(chunks[i]);
-      await insertChunk(file.name, i, chunks[i], embedding);
-    }
+    // 6. 批量向量化 + 并行写入数据库
+    // 优化：原先逐片 await（N次API调用 + N次DB写入），
+    // 现在云端只需 1 次 API 批量调用 + 并行 DB 写入
+    const embeddings = await getEmbeddings(chunks);
+    await Promise.all(
+      embeddings.map((embedding, i) =>
+        insertChunk(file.name, i, chunks[i], embedding)
+      )
+    );
 
     return NextResponse.json({
       success: true,
