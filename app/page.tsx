@@ -236,13 +236,12 @@ export default function Chat() {
     } catch (e) {
       console.error("保存对话失败:", e);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, fetchChatList]);
 
   // 页面加载时获取对话列表
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     fetchChatList();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 自动保存：检测 AI 回复完成（streaming → ready）
@@ -340,8 +339,8 @@ export default function Chat() {
   };
 
   // 把 useChat 的消息映射成 Bubble.List 需要的 items 格式
-  // 用 useMemo 避免流式渲染时每次 token 都重建所有 item
-  const bubbleItems = useMemo(() => {
+  // 自定义数据（rag/expanded）通过闭包 Map 查找，避免透传到 DOM
+  const { bubbleItems, getRag, getExpanded } = useMemo(() => {
     const ragMap = new Map<string, RagData>();
     const panMap = new Map<string, boolean>();
 
@@ -366,28 +365,24 @@ export default function Chat() {
           .map((p: { type: string; text?: string }) => p.text || "")
           .join(""),
         streaming: isLastAssistant && status === "streaming",
-        // 传递 rag/expanded 数据供 contentRender 使用
-        _rag: rag,
-        _expanded: expanded,
-        _isLast: isLastAssistant,
       };
     });
 
-    // 发送后、AI 开始回复前，显示加载动画（放在 useMemo 内部避免外部 mutation）
-  if (status === "submitted") {
-    items.push({
-      key: "loading",
-      role: "assistant" as const,
-      content: "",
-      streaming: false,
-      _rag: undefined as RagData | undefined,
-      _expanded: false,
-      _isLast: false,
-    });
-  }
+    // 发送后、AI 开始回复前，显示加载动画
+    if (status === "submitted") {
+      items.push({
+        key: "loading",
+        role: "assistant" as const,
+        content: "",
+        streaming: false,
+      });
+    }
 
-  return items;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    return {
+      bubbleItems: items,
+      getRag: (key: string | number) => ragMap.get(String(key)),
+      getExpanded: (key: string | number) => panMap.get(String(key)) ?? false,
+    };
   }, [messages, status, expandedPanels]);
 
   return (
@@ -505,16 +500,12 @@ export default function Chat() {
                     avatar: <UserOutlined />,
                     shape: "round",
                   },
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   assistant: (item: {
                     key: string | number;
                     streaming?: boolean;
-                    _rag?: RagData;
-                    _expanded?: boolean;
-                    _isLast?: boolean;
                   }) => {
-                    const rag = item._rag;
-                    const expanded = item._expanded ?? false;
+                    const rag = getRag(item.key);
+                    const expanded = getExpanded(item.key);
                     return {
                     placement: "start",
                     avatar: <RobotOutlined />,
