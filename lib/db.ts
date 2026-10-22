@@ -9,6 +9,8 @@ export const sql = postgres({
   username: process.env.DB_USER || "postgres",
   password: process.env.DB_PASSWORD || "postgres",
   ssl: process.env.DB_HOST?.includes("supabase") ? "require" : false,
+  // Supabase 事务模式连接池（6543）不支持会话级 prepared statement
+  prepare: false,
 });
 
 /**

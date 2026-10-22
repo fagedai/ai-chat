@@ -1,24 +1,9 @@
-import { createOpenAI } from "@ai-sdk/openai";
 import { streamText, convertToModelMessages, type ModelMessage } from "ai";
 import { getEmbedding } from "@/lib/embedding";
 import { hybridSearch } from "@/lib/hybrid";
 import { rerank } from "@/lib/rerank";
 import { summarizeMessages } from "@/lib/summarize";
-
-// LLM 配置：有 SILICONFLOW_API_KEY 时用免费模型，否则用 DeepSeek
-const llmProvider = process.env.SILICONFLOW_API_KEY
-  ? createOpenAI({
-      apiKey: process.env.SILICONFLOW_API_KEY,
-      baseURL: "https://api.siliconflow.cn/v1",
-    })
-  : createOpenAI({
-      apiKey: process.env.DEEPSEEK_API_KEY,
-      baseURL: "https://api.deepseek.com",
-    });
-
-const llmModel = process.env.SILICONFLOW_API_KEY
-  ? "Qwen/Qwen2.5-32B-Instruct"  // 硅基流动免费模型（32B，比7B稳定）
-  : "deepseek-chat";              // DeepSeek 付费模型
+import { getLLM } from "@/lib/llm";
 
 // ---- 加固配置 ----
 const SIMILARITY_THRESHOLD = 0.5; // 相似度低于 50% 的片段不引用
@@ -176,8 +161,9 @@ ${context}
     ? `${systemPrompt}\n\n${historySummary}`
     : systemPrompt;
 
+  const { provider, model } = getLLM();
   const result = streamText({
-    model: llmProvider.chat(llmModel),
+    model: provider.chat(model),
     system: finalSystemPrompt,
     messages: contextMessages,
   });

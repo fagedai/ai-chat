@@ -1,0 +1,15 @@
+node_modules
+.next
+.git
+.gitignore
+.claude
+.env
+.env.*
+npm-debug.log*
+README.md
+AGENTS.md
+CLAUDE.md
+test.md
+test2.md
+test-docs
+tests

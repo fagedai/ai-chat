@@ -1,21 +1,6 @@
-import { createOpenAI } from "@ai-sdk/openai";
 import { generateText } from "ai";
 import { topologicalSort, getParentOutput, type WorkflowNode, type WorkflowEdge } from "@/lib/workflow";
-
-// LLM 配置：有 SILICONFLOW_API_KEY 时用免费模型，否则用 DeepSeek
-const llmProvider = process.env.SILICONFLOW_API_KEY
-  ? createOpenAI({
-      apiKey: process.env.SILICONFLOW_API_KEY,
-      baseURL: "https://api.siliconflow.cn/v1",
-    })
-  : createOpenAI({
-      apiKey: process.env.DEEPSEEK_API_KEY,
-      baseURL: "https://api.deepseek.com",
-    });
-
-const llmModel = process.env.SILICONFLOW_API_KEY
-  ? "Qwen/Qwen2.5-32B-Instruct"
-  : "deepseek-chat";
+import { getLLM } from "@/lib/llm";
 
 // 单个节点执行结果
 interface NodeResult {
@@ -100,10 +85,11 @@ async function executeNode(
       // 找到上游节点的输出作为输入
       const parentOutput = getParentOutput(node.id, edges, variables);
       const prompt = (node.data.prompt as string) || "请回答以下问题：";
-      const model = (node.data.model as string) || llmModel;
+      const { provider, model: defaultModel } = getLLM();
+      const model = (node.data.model as string) || defaultModel;
 
       const { text } = await generateText({
-        model: llmProvider.chat(model),
+        model: provider.chat(model),
         prompt: `${prompt}\n\n用户输入：${parentOutput}`,
       });
       return text;
