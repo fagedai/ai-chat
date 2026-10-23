@@ -36,7 +36,7 @@
 
 **成本控制**
 
-- 每用户每日 30 次调用、全站每日 300 次，超额返回 429
+- 每用户每日 300 次调用、全站每日 1000 次，超额返回 429
 - 每次 LLM 调用记录 token 与耗时，`/usage` 页面展示今日用量、剩余额度、平均响应时间和估算成本
 
 ## 技术栈
@@ -89,8 +89,8 @@ npm run dev
 | `SESSION_SECRET` | ✅ | JWT 签名密钥，`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` 生成 |
 | `SILICONFLOW_API_KEY` | ✅ | 用于云端 Embedding + 默认 LLM；不填会退化为本地 512 维模型 |
 | `DEEPSEEK_API_KEY` / `DEEPSEEK_API_BASE` | ❌ | 未配置硅基流动时的 LLM 兜底 |
-| `CHAT_DAILY_LIMIT_PER_USER` | ❌ | 每用户每日调用上限，默认 `30` |
-| `CHAT_DAILY_LIMIT_GLOBAL` | ❌ | 全站每日调用上限，默认 `300` |
+| `CHAT_DAILY_LIMIT_PER_USER` | ❌ | 每用户每日调用上限，默认 `300` |
+| `CHAT_DAILY_LIMIT_GLOBAL` | ❌ | 全站每日调用上限，默认 `1000` |
 | `LLM_PRICE_INPUT_PER_M` / `LLM_PRICE_OUTPUT_PER_M` | ❌ | 单价（元/百万 token），配置后看板显示估算成本 |
 | `HF_ENDPOINT` | ❌ | 本地 embedding 模型的下载镜像 |
 

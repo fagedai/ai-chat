@@ -9,11 +9,11 @@ import { sql } from "./db";
 
 /** 每个用户每天能发起的 LLM 调用次数 */
 export const DAILY_LIMIT_PER_USER = Number(
-  process.env.CHAT_DAILY_LIMIT_PER_USER || 30
+  process.env.CHAT_DAILY_LIMIT_PER_USER || 300
 );
 /** 全站每天总调用上限，防止被刷爆额度 */
 export const DAILY_LIMIT_GLOBAL = Number(
-  process.env.CHAT_DAILY_LIMIT_GLOBAL || 300
+  process.env.CHAT_DAILY_LIMIT_GLOBAL || 1000
 );
 
 /** 价格（元 / 百万 token），不配置则看板只显示 token 数不显示金额 */
