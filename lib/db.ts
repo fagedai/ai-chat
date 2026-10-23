@@ -22,6 +22,16 @@ export async function initDb() {
 
   const dim = getEmbeddingDimension();
 
+  // 用户表（邮箱 + bcrypt 哈希）
+  await sql`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `;
+
   // postgres 模板字符串不支持 DDL 动态插值，用 unsafe 拼接
   await sql.unsafe(`
     CREATE TABLE IF NOT EXISTS documents (
@@ -30,9 +40,14 @@ export async function initDb() {
       chunk_index INTEGER NOT NULL,
       content TEXT NOT NULL,
       embedding vector(${dim}),
+      user_id INTEGER,
       created_at TIMESTAMP DEFAULT NOW()
     )
   `);
+
+  // 存量表补列（幂等）：老数据 user_id 为 NULL，对任何用户都不可见
+  await sql`ALTER TABLE documents ADD COLUMN IF NOT EXISTS user_id INTEGER`;
+  await sql`CREATE INDEX IF NOT EXISTS documents_user_idx ON documents (user_id)`;
 
   // 向量索引（加速相似度检索）
   await sql`
@@ -46,6 +61,7 @@ export async function initDb() {
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL DEFAULT '未命名工作流',
       data JSONB NOT NULL,
+      user_id INTEGER,
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW()
     )
@@ -57,10 +73,17 @@ export async function initDb() {
       id SERIAL PRIMARY KEY,
       title TEXT NOT NULL DEFAULT '新对话',
       messages JSONB NOT NULL DEFAULT '[]',
+      user_id INTEGER,
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW()
     )
   `;
+
+  // 存量表补列（幂等）
+  await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS user_id INTEGER`;
+  await sql`ALTER TABLE chats ADD COLUMN IF NOT EXISTS user_id INTEGER`;
+  await sql`CREATE INDEX IF NOT EXISTS workflows_user_idx ON workflows (user_id)`;
+  await sql`CREATE INDEX IF NOT EXISTS chats_user_idx ON chats (user_id)`;
 }
 
 /**
@@ -70,13 +93,14 @@ export async function insertChunk(
   filename: string,
   chunkIndex: number,
   content: string,
-  embedding: number[]
+  embedding: number[],
+  userId: number
 ) {
   // pgvector 要求向量格式为 "[0.1, 0.2, ...]"，需转为 JSON 字符串
   const vectorStr = JSON.stringify(embedding);
   await sql`
-    INSERT INTO documents (filename, chunk_index, content, embedding)
-    VALUES (${filename}, ${chunkIndex}, ${content}, ${vectorStr}::vector)
+    INSERT INTO documents (filename, chunk_index, content, embedding, user_id)
+    VALUES (${filename}, ${chunkIndex}, ${content}, ${vectorStr}::vector, ${userId})
   `;
 }
 
@@ -85,7 +109,8 @@ export async function insertChunk(
  */
 export async function searchSimilar(
   queryEmbedding: number[],
-  limit = 3
+  limit = 3,
+  userId: number
 ) {
   // pgvector 要求向量格式为 "[0.1, 0.2, ...]"
   // 注意：Supabase 上 ORDER BY embedding <=> vector 会返回空结果（ivfflat 索引兼容性问题）
@@ -96,6 +121,7 @@ export async function searchSimilar(
       SELECT id, filename, chunk_index, content,
              1 - (embedding <=> ${vectorStr}::vector) AS similarity
       FROM documents
+      WHERE user_id = ${userId}
     ) AS sub
     WHERE similarity >= 0.1
   `;
@@ -121,7 +147,8 @@ export async function searchSimilar(
 export async function searchBM25(
   query: string,
   keywords: string[],
-  limit = 10
+  limit = 10,
+  userId: number
 ) {
   if (!keywords.length) return [];
 
@@ -148,14 +175,16 @@ export async function searchBM25(
             .join(" + ")}
         )::float / ${keywords.length} AS keyword_hit_rate
       FROM documents
-      WHERE
+      WHERE (
         to_tsvector('simple', content) @@ plainto_tsquery('simple', $${keywords.length + 1})
         OR ${ilikeConditions}
+      )
+      AND user_id = $${keywords.length + 2}
     ) sub
     ORDER BY bm25_total DESC
     LIMIT ${limit}
     `,
-    [...ilikeParams, tsQuery]
+    [...ilikeParams, tsQuery, userId]
   );
 
   // 归一化为统一格式，bm25_score = ts_score + keyword_hit_rate
@@ -178,10 +207,11 @@ export async function searchBM25(
 /**
  * 获取所有已上传的文档列表（按文件名分组）
  */
-export async function listDocuments() {
+export async function listDocuments(userId: number) {
   const results = await sql`
     SELECT filename, COUNT(*) as chunk_count, MIN(created_at) as uploaded_at
     FROM documents
+    WHERE user_id = ${userId}
     GROUP BY filename
     ORDER BY uploaded_at DESC
   `;
@@ -195,8 +225,15 @@ export async function listDocuments() {
 /**
  * 删除指定文件的所有切片
  */
-export async function deleteDocument(filename: string) {
-  await sql`DELETE FROM documents WHERE filename = ${filename}`;
+/** 删除成功返回受影响行数，0 表示不存在或不属于当前用户 */
+export async function deleteDocument(
+  filename: string,
+  userId: number
+): Promise<number> {
+  const result = await sql`
+    DELETE FROM documents WHERE filename = ${filename} AND user_id = ${userId}
+  `;
+  return result.count;
 }
 
 // ========== 工作流 CRUD ==========
@@ -207,19 +244,23 @@ export async function deleteDocument(filename: string) {
 export async function saveWorkflow(
   id: number | null,
   name: string,
-  data: unknown
+  data: unknown,
+  userId: number
 ): Promise<number> {
   if (id) {
-    // 更新现有工作流
+    // 更新现有工作流（必须同时校验归属，防止越权改他人数据）
     const result = await sql`
       UPDATE workflows SET name = ${name}, data = ${JSON.stringify(data)}, updated_at = NOW()
-      WHERE id = ${id} RETURNING id
+      WHERE id = ${id} AND user_id = ${userId} RETURNING id
     `;
-    return (result as unknown as Array<{ id: number }>)[0].id;
+    const row = (result as unknown as Array<{ id: number }>)[0];
+    if (!row) throw new Error("工作流不存在或无权访问");
+    return row.id;
   } else {
     // 新建工作流
     const result = await sql`
-      INSERT INTO workflows (name, data) VALUES (${name}, ${JSON.stringify(data)})
+      INSERT INTO workflows (name, data, user_id)
+      VALUES (${name}, ${JSON.stringify(data)}, ${userId})
       RETURNING id
     `;
     return (result as unknown as Array<{ id: number }>)[0].id;
@@ -229,9 +270,11 @@ export async function saveWorkflow(
 /**
  * 获取所有工作流列表
  */
-export async function listWorkflows() {
+export async function listWorkflows(userId: number) {
   const results = await sql`
-    SELECT id, name, created_at, updated_at FROM workflows ORDER BY updated_at DESC
+    SELECT id, name, created_at, updated_at FROM workflows
+    WHERE user_id = ${userId}
+    ORDER BY updated_at DESC
   `;
   return results as unknown as Array<{
     id: number;
@@ -244,8 +287,10 @@ export async function listWorkflows() {
 /**
  * 获取单个工作流详情
  */
-export async function getWorkflow(id: number) {
-  const results = await sql`SELECT * FROM workflows WHERE id = ${id}`;
+export async function getWorkflow(id: number, userId: number) {
+  const results = await sql`
+    SELECT * FROM workflows WHERE id = ${id} AND user_id = ${userId}
+  `;
   return (results as unknown as Array<{
     id: number;
     name: string;
@@ -258,8 +303,15 @@ export async function getWorkflow(id: number) {
 /**
  * 删除工作流
  */
-export async function deleteWorkflow(id: number) {
-  await sql`DELETE FROM workflows WHERE id = ${id}`;
+/** 删除成功返回受影响行数，0 表示不存在或不属于当前用户 */
+export async function deleteWorkflow(
+  id: number,
+  userId: number
+): Promise<number> {
+  const result = await sql`
+    DELETE FROM workflows WHERE id = ${id} AND user_id = ${userId}
+  `;
+  return result.count;
 }
 
 // ========== 对话历史 CRUD ==========
@@ -271,20 +323,24 @@ export async function deleteWorkflow(id: number) {
 export async function saveChat(
   id: number | null,
   title: string,
-  messages: unknown
+  messages: unknown,
+  userId: number
 ): Promise<number> {
   // postgres.js 对 JSONB 列自动序列化，不需要 JSON.stringify
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const msgJson = sql.json(messages as any);
   if (id) {
+    // 更新时必须同时校验归属，防止越权改他人对话
     const result = await sql`
       UPDATE chats SET title = ${title}, messages = ${msgJson}, updated_at = NOW()
-      WHERE id = ${id} RETURNING id
+      WHERE id = ${id} AND user_id = ${userId} RETURNING id
     `;
-    return (result as unknown as Array<{ id: number }>)[0].id;
+    const row = (result as unknown as Array<{ id: number }>)[0];
+    if (!row) throw new Error("对话不存在或无权访问");
+    return row.id;
   } else {
     const result = await sql`
-      INSERT INTO chats (title, messages) VALUES (${title}, ${msgJson})
+      INSERT INTO chats (title, messages, user_id) VALUES (${title}, ${msgJson}, ${userId})
       RETURNING id
     `;
     return (result as unknown as Array<{ id: number }>)[0].id;
@@ -294,9 +350,11 @@ export async function saveChat(
 /**
  * 获取所有对话列表（不返回完整消息，只返回摘要）
  */
-export async function listChats() {
+export async function listChats(userId: number) {
   const results = await sql`
-    SELECT id, title, created_at, updated_at FROM chats ORDER BY updated_at DESC
+    SELECT id, title, created_at, updated_at FROM chats
+    WHERE user_id = ${userId}
+    ORDER BY updated_at DESC
   `;
   return results as unknown as Array<{
     id: number;
@@ -309,8 +367,8 @@ export async function listChats() {
 /**
  * 获取单个对话详情（含完整消息）
  */
-export async function getChat(id: number) {
-  const results = await sql`SELECT * FROM chats WHERE id = ${id}`;
+export async function getChat(id: number, userId: number) {
+  const results = await sql`SELECT * FROM chats WHERE id = ${id} AND user_id = ${userId}`;
   return (results as unknown as Array<{
     id: number;
     title: string;
@@ -323,6 +381,13 @@ export async function getChat(id: number) {
 /**
  * 删除对话
  */
-export async function deleteChat(id: number) {
-  await sql`DELETE FROM chats WHERE id = ${id}`;
+/** 删除成功返回受影响行数，0 表示不存在或不属于当前用户 */
+export async function deleteChat(
+  id: number,
+  userId: number
+): Promise<number> {
+  const result = await sql`
+    DELETE FROM chats WHERE id = ${id} AND user_id = ${userId}
+  `;
+  return result.count;
 }

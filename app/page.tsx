@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, memo, useMemo } from "react";
 import { useChat } from "@ai-sdk/react";
+import { DefaultChatTransport } from "ai";
 import { Bubble, Sender, Welcome } from "@ant-design/x";
 import {
   UserOutlined,
@@ -18,6 +19,7 @@ import {
 } from "@ant-design/icons";
 import { Button, Popconfirm, Empty, Spin } from "antd";
 import { useSidebar } from "@/components/sidebar";
+import { apiFetch } from "@/lib/api-fetch";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -164,7 +166,14 @@ const MemoMarkdown = memo(function MemoMarkdown({
 });
 
 export default function Chat() {
-  const { messages, sendMessage, status, setMessages, stop } = useChat();
+  // 自定义 transport.fetch：会话失效（401）时统一跳转登录页
+  const transport = useMemo(
+    () => new DefaultChatTransport({ fetch: apiFetch }),
+    []
+  );
+  const { messages, sendMessage, status, setMessages, stop } = useChat({
+    transport,
+  });
   const [input, setInput] = useState("");
   const [chatList, setChatList] = useState<ChatSummary[]>([]);
   const [currentChatId, setCurrentChatId] = useState<number | null>(null);
@@ -213,7 +222,7 @@ export default function Chat() {
   const fetchChatList = useCallback(async () => {
     setLoadingList(true);
     try {
-      const res = await fetch("/api/chats");
+      const res = await apiFetch("/api/chats");
       if (res.ok) {
         const data = await res.json();
         setChatList(data);
@@ -237,7 +246,7 @@ export default function Chat() {
             .slice(0, 20)
         : "新对话";
 
-      const res = await fetch("/api/chats", {
+      const res = await apiFetch("/api/chats", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -303,7 +312,7 @@ export default function Chat() {
     if (isLoading) return;
     setLoadingChat(true);
     try {
-      const res = await fetch(`/api/chats?id=${id}`);
+      const res = await apiFetch(`/api/chats?id=${id}`);
       if (res.ok) {
         const data = await res.json();
         // JSONB 可能返回字符串（甚至双重转义），循环 parse 直到得到非字符串
@@ -356,7 +365,7 @@ export default function Chat() {
   // 删除对话
   const handleDeleteChat = async (id: number) => {
     try {
-      await fetch(`/api/chats?id=${id}`, { method: "DELETE" });
+      await apiFetch(`/api/chats?id=${id}`, { method: "DELETE" });
       if (currentChatId === id) {
         handleNewChat();
       }

@@ -6,26 +6,30 @@ import {
   getChat,
   deleteChat,
 } from "@/lib/db";
+import { requireSession } from "@/lib/dal";
 
 /**
  * GET /api/chats - 获取对话列表
  * GET /api/chats?id=1 - 获取单个对话详情（含完整消息）
  */
 export async function GET(req: NextRequest) {
+  const session = await requireSession();
+  if (session instanceof Response) return session;
+
   try {
     await initDb();
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
     if (id) {
-      const chat = await getChat(Number(id));
+      const chat = await getChat(Number(id), session.userId);
       if (!chat) {
         return NextResponse.json({ error: "对话不存在" }, { status: 404 });
       }
       return NextResponse.json(chat);
     }
 
-    const chats = await listChats();
+    const chats = await listChats(session.userId);
     return NextResponse.json(chats);
   } catch (error) {
     console.error("获取对话列表失败:", error);
@@ -41,10 +45,18 @@ export async function GET(req: NextRequest) {
  * Body: { id?: number, title: string, messages: UIMessage[] }
  */
 export async function POST(req: NextRequest) {
+  const session = await requireSession();
+  if (session instanceof Response) return session;
+
   try {
     await initDb();
     const { id, title, messages } = await req.json();
-    const savedId = await saveChat(id || null, title || "新对话", messages);
+    const savedId = await saveChat(
+      id || null,
+      title || "新对话",
+      messages,
+      session.userId
+    );
     return NextResponse.json({ id: savedId, success: true });
   } catch (error) {
     console.error("保存对话失败:", error);
@@ -59,6 +71,9 @@ export async function POST(req: NextRequest) {
  * DELETE /api/chats?id=1 - 删除对话
  */
 export async function DELETE(req: NextRequest) {
+  const session = await requireSession();
+  if (session instanceof Response) return session;
+
   try {
     await initDb();
     const { searchParams } = new URL(req.url);
@@ -66,7 +81,13 @@ export async function DELETE(req: NextRequest) {
     if (!id) {
       return NextResponse.json({ error: "缺少 id 参数" }, { status: 400 });
     }
-    await deleteChat(Number(id));
+    const deleted = await deleteChat(Number(id), session.userId);
+    if (deleted === 0) {
+      return NextResponse.json(
+        { error: "对话不存在或无权访问" },
+        { status: 404 }
+      );
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("删除对话失败:", error);

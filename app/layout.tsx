@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
 import { SidebarProvider, HistoryToggle } from "@/components/sidebar";
 import { MobileNav } from "@/components/mobile-nav";
+import { UserMenu } from "@/components/user-menu";
 import "./globals.css";
 import Link from "next/link";
 
@@ -20,6 +21,7 @@ export default function RootLayout({
       <body className="h-full flex flex-col">
         <AntdRegistry>
           <SidebarProvider>
+            <UserMenu />
             <div className="flex h-full">
               {/* 左侧导航栏（桌面端） */}
               <nav className="hidden md:flex w-14 border-r border-zinc-200 bg-white flex-col items-center py-4 gap-4 shrink-0">

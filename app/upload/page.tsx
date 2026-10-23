@@ -9,6 +9,7 @@ import {
   ReloadOutlined,
 } from "@ant-design/icons";
 import { message, Spin } from "antd";
+import { apiFetch } from "@/lib/api-fetch";
 
 interface Document {
   filename: string;
@@ -18,7 +19,7 @@ interface Document {
 
 async function fetchDocs(): Promise<Document[]> {
   try {
-    const res = await fetch("/api/documents");
+    const res = await apiFetch("/api/documents");
     const data = await res.json();
     return data.documents || [];
   } catch {
@@ -64,7 +65,7 @@ export default function UploadPage() {
       const formData = new FormData();
       formData.append("file", file);
 
-      const res = await fetch("/api/upload", {
+      const res = await apiFetch("/api/upload", {
         method: "POST",
         body: formData,
       });
@@ -90,7 +91,7 @@ export default function UploadPage() {
     if (!confirm(`确定删除「${filename}」及其所有片段？`)) return;
 
     try {
-      const res = await fetch(
+      const res = await apiFetch(
         `/api/documents?filename=${encodeURIComponent(filename)}`,
         { method: "DELETE" }
       );

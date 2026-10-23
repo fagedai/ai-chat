@@ -4,6 +4,7 @@ import { getEmbeddings } from "@/lib/embedding";
 import { chunkText } from "@/lib/chunker";
 import { sanitizeContent } from "@/lib/sanitizer";
 import mammoth from "mammoth";
+import { requireSession } from "@/lib/dal";
 
 /**
  * POST /api/upload
@@ -11,6 +12,9 @@ import mammoth from "mammoth";
  * 支持格式：.txt, .md, .docx
  */
 export async function POST(req: NextRequest) {
+  const session = await requireSession();
+  if (session instanceof Response) return session;
+
   try {
     // 1. 初始化数据库（首次调用会建表）
     await initDb();
@@ -36,8 +40,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: check.reason }, { status: 403 });
     }
 
-    // 4. 检查同名文件是否已存在
-    const existingDocs = await listDocuments();
+    // 4. 检查同名文件是否已存在（仅限当前用户的知识库）
+    const existingDocs = await listDocuments(session.userId);
     if (existingDocs.some((d) => d.filename === file.name)) {
       return NextResponse.json(
         { error: `已存在同名文件「${file.name}」，请先删除同名文件再上传` },
@@ -54,7 +58,7 @@ export async function POST(req: NextRequest) {
     const embeddings = await getEmbeddings(chunks);
     await Promise.all(
       embeddings.map((embedding, i) =>
-        insertChunk(file.name, i, chunks[i], embedding)
+        insertChunk(file.name, i, chunks[i], embedding, session.userId)
       )
     );
 

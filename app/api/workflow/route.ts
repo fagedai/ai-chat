@@ -6,26 +6,30 @@ import {
   getWorkflow,
   deleteWorkflow,
 } from "@/lib/db";
+import { requireSession } from "@/lib/dal";
 
 /**
  * GET /api/workflow - 获取工作流列表
  * GET /api/workflow?id=1 - 获取单个工作流详情
  */
 export async function GET(req: NextRequest) {
+  const session = await requireSession();
+  if (session instanceof Response) return session;
+
   try {
     await initDb();
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
     if (id) {
-      const workflow = await getWorkflow(Number(id));
+      const workflow = await getWorkflow(Number(id), session.userId);
       if (!workflow) {
         return NextResponse.json({ error: "工作流不存在" }, { status: 404 });
       }
       return NextResponse.json(workflow);
     }
 
-    const workflows = await listWorkflows();
+    const workflows = await listWorkflows(session.userId);
     return NextResponse.json(workflows);
   } catch (error) {
     console.error("获取工作流失败:", error);
@@ -41,10 +45,18 @@ export async function GET(req: NextRequest) {
  * Body: { id?: number, name: string, data: { nodes, edges } }
  */
 export async function POST(req: NextRequest) {
+  const session = await requireSession();
+  if (session instanceof Response) return session;
+
   try {
     await initDb();
     const { id, name, data } = await req.json();
-    const savedId = await saveWorkflow(id || null, name || "未命名工作流", data);
+    const savedId = await saveWorkflow(
+      id || null,
+      name || "未命名工作流",
+      data,
+      session.userId
+    );
     return NextResponse.json({ id: savedId, success: true });
   } catch (error) {
     console.error("保存工作流失败:", error);
@@ -59,6 +71,9 @@ export async function POST(req: NextRequest) {
  * DELETE /api/workflow?id=1 - 删除工作流
  */
 export async function DELETE(req: NextRequest) {
+  const session = await requireSession();
+  if (session instanceof Response) return session;
+
   try {
     await initDb();
     const { searchParams } = new URL(req.url);
@@ -66,7 +81,13 @@ export async function DELETE(req: NextRequest) {
     if (!id) {
       return NextResponse.json({ error: "缺少 id 参数" }, { status: 400 });
     }
-    await deleteWorkflow(Number(id));
+    const deleted = await deleteWorkflow(Number(id), session.userId);
+    if (deleted === 0) {
+      return NextResponse.json(
+        { error: "工作流不存在或无权访问" },
+        { status: 404 }
+      );
+    }
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("删除工作流失败:", error);

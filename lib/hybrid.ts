@@ -29,19 +29,21 @@ export interface HybridSearchResult {
  * @param query           用户原始问题文本
  * @param vectorLimit     向量检索召回数量（默认 10）
  * @param bm25Limit       BM25 检索召回数量（默认 10）
+ * @param userId          当前登录用户，检索只在该用户的知识库内进行
  */
 export async function hybridSearch(
   queryEmbedding: number[],
   query: string,
   vectorLimit = 10,
-  bm25Limit = 10
+  bm25Limit = 10,
+  userId: number
 ): Promise<HybridSearchResult> {
   const keywords = extractKeywords(query);
 
   // 两路检索独立容错：向量挂了 BM25 照样能搜
   const [vectorResult, bm25Result] = await Promise.allSettled([
-    searchSimilar(queryEmbedding, vectorLimit),
-    searchBM25(query, keywords, bm25Limit),
+    searchSimilar(queryEmbedding, vectorLimit, userId),
+    searchBM25(query, keywords, bm25Limit, userId),
   ]);
 
   const vectorResults =

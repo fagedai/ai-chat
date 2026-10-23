@@ -4,6 +4,7 @@ import { hybridSearch } from "@/lib/hybrid";
 import { rerank } from "@/lib/rerank";
 import { summarizeMessages } from "@/lib/summarize";
 import { getLLM } from "@/lib/llm";
+import { requireSession } from "@/lib/dal";
 
 // ---- 加固配置 ----
 const SIMILARITY_THRESHOLD = 0.5; // 相似度低于 50% 的片段不引用
@@ -17,6 +18,10 @@ const MAX_CONTEXT_ROUNDS = 10;
 const MAX_CONTEXT_MESSAGES = MAX_CONTEXT_ROUNDS * 2;
 
 export async function POST(req: Request) {
+  // 未登录直接 401，避免匿名消耗 LLM 额度
+  const session = await requireSession();
+  if (session instanceof Response) return session;
+
   const { messages } = await req.json();
   const modelMessages: ModelMessage[] = await convertToModelMessages(messages);
 
@@ -53,7 +58,8 @@ export async function POST(req: Request) {
         questionEmbedding,
         userQuestion,
         RETRIEVE_TOP_K,
-        RETRIEVE_TOP_K
+        RETRIEVE_TOP_K,
+        session.userId
       );
 
       // 阈值过滤：向量检索和 BM25 结果都需过阈值

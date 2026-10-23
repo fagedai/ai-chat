@@ -19,6 +19,7 @@ import {
   MarkerType,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
+import { apiFetch } from "@/lib/api-fetch";
 import {
   Button,
   Input,
@@ -229,7 +230,7 @@ function WorkflowCanvas() {
     );
 
     try {
-      const res = await fetch("/api/workflow/run", {
+      const res = await apiFetch("/api/workflow/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ nodes, edges, input: userInput }),
@@ -334,7 +335,7 @@ function WorkflowCanvas() {
   // 保存工作流到 Supabase 数据库
   const saveWorkflow = async () => {
     try {
-      const res = await fetch("/api/workflow", {
+      const res = await apiFetch("/api/workflow", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -357,7 +358,7 @@ function WorkflowCanvas() {
   // 加载已保存的工作流列表
   const loadWorkflowList = async () => {
     try {
-      const res = await fetch("/api/workflow");
+      const res = await apiFetch("/api/workflow");
       const list = await res.json();
       setSavedWorkflows(list);
     } catch (error) {
@@ -368,7 +369,7 @@ function WorkflowCanvas() {
   // 加载指定工作流
   const loadWorkflow = async (id: number) => {
     try {
-      const res = await fetch(`/api/workflow?id=${id}`);
+      const res = await apiFetch(`/api/workflow?id=${id}`);
       const workflow = await res.json();
       if (workflow?.data) {
         setNodes(workflow.data.nodes || []);
@@ -386,7 +387,7 @@ function WorkflowCanvas() {
   // 删除工作流
   const removeWorkflow = async (id: number) => {
     try {
-      await fetch(`/api/workflow?id=${id}`, { method: "DELETE" });
+      await apiFetch(`/api/workflow?id=${id}`, { method: "DELETE" });
       loadWorkflowList();
       if (workflowId === id) {
         clearCanvas();

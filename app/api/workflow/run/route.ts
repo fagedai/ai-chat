@@ -1,6 +1,7 @@
 import { generateText } from "ai";
 import { topologicalSort, getParentOutput, type WorkflowNode, type WorkflowEdge } from "@/lib/workflow";
 import { getLLM } from "@/lib/llm";
+import { requireSession } from "@/lib/dal";
 
 // 单个节点执行结果
 interface NodeResult {
@@ -15,6 +16,9 @@ interface NodeResult {
  * 接收工作流 JSON → 拓扑排序 → 逐节点执行 → SSE 推送状态
  */
 export async function POST(req: Request) {
+  const session = await requireSession();
+  if (session instanceof Response) return session;
+
   const { nodes, edges, input } = await req.json() as {
     nodes: WorkflowNode[];
     edges: WorkflowEdge[];
@@ -45,7 +49,13 @@ export async function POST(req: Request) {
         send({ nodeId, status: "running" });
 
         try {
-          const output = await executeNode(node, variables, edges, nodes);
+          const output = await executeNode(
+            node,
+            variables,
+            edges,
+            nodes,
+            session.userId
+          );
           variables[nodeId] = output;
           send({ nodeId, status: "success", output });
         } catch (error) {
@@ -75,7 +85,8 @@ async function executeNode(
   node: WorkflowNode,
   variables: Record<string, string>,
   edges: WorkflowEdge[],
-  nodes: WorkflowNode[]
+  nodes: WorkflowNode[],
+  userId: number
 ): Promise<string> {
   switch (node.type) {
     case "startNode":
@@ -106,7 +117,7 @@ async function executeNode(
           const { searchSimilar } = await import("@/lib/db");
           try {
             const embedding = await getEmbedding(parentOutput);
-            const results = await searchSimilar(embedding, 3);
+            const results = await searchSimilar(embedding, 3, userId);
             if (results.length > 0) {
               return results.map((r) => `[${r.filename}] ${r.content}`).join("\n\n");
             }
