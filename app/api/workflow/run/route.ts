@@ -2,6 +2,7 @@ import { generateText } from "ai";
 import { topologicalSort, getParentOutput, type WorkflowNode, type WorkflowEdge } from "@/lib/workflow";
 import { getLLM } from "@/lib/llm";
 import { requireSession } from "@/lib/dal";
+import { checkQuota, recordUsage } from "@/lib/usage";
 
 // 单个节点执行结果
 interface NodeResult {
@@ -18,6 +19,20 @@ interface NodeResult {
 export async function POST(req: Request) {
   const session = await requireSession();
   if (session instanceof Response) return session;
+
+  const quota = await checkQuota(session.userId);
+  if (!quota.allowed) {
+    return Response.json(
+      {
+        error:
+          quota.reason === "user"
+            ? `今日调用额度已用尽（${quota.used}/${quota.limit} 次），请明天再来`
+            : "今日全站体验额度已用尽，请明天再来",
+        quota,
+      },
+      { status: 429 }
+    );
+  }
 
   const { nodes, edges, input } = await req.json() as {
     nodes: WorkflowNode[];
@@ -99,9 +114,17 @@ async function executeNode(
       const { provider, model: defaultModel } = getLLM();
       const model = (node.data.model as string) || defaultModel;
 
-      const { text } = await generateText({
+      const startedAt = Date.now();
+      const { text, usage } = await generateText({
         model: provider.chat(model),
         prompt: `${prompt}\n\n用户输入：${parentOutput}`,
+      });
+      await recordUsage({
+        userId,
+        kind: "workflow",
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        latencyMs: Date.now() - startedAt,
       });
       return text;
     }

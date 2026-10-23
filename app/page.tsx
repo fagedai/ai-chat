@@ -20,6 +20,7 @@ import {
 import { Button, Popconfirm, Empty, Spin } from "antd";
 import { useSidebar } from "@/components/sidebar";
 import { apiFetch } from "@/lib/api-fetch";
+import { splitMarkdownBlocks } from "@/lib/markdown-blocks";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -117,7 +118,8 @@ const StableBlock = memo(function StableBlock({ text }: { text: string }) {
 });
 
 // Markdown 渲染器
-// streaming 时按 \n\n 分割语义块，已完成的块用 memo 冻结，只有最后一个未完成的块实时更新
+// streaming 时按空行分割语义块（fence 感知，代码块不会被切断），
+// 已完成的块用 memo 冻结，只有最后一个未完成的块实时更新；
 // 流式结束后一次性渲染全量 markdown
 const MemoMarkdown = memo(function MemoMarkdown({
   content,
@@ -128,7 +130,7 @@ const MemoMarkdown = memo(function MemoMarkdown({
 }) {
   // 流式输出：按语义块增量渲染
   if (streaming) {
-    const blocks = content.split(/\n\n+/);
+    const blocks = splitMarkdownBlocks(content);
     const lastIdx = blocks.length - 1;
     return (
       <div className="markdown-body">

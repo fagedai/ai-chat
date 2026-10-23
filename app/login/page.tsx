@@ -7,7 +7,8 @@ import { DEMO_EMAIL, DEMO_PASSWORD } from "@/lib/demo";
 
 /**
  * 登录页
- * 本版不开放注册，只提供演示账号（已在表单中预填，直接点登录即可）。
+ * 本版不开放注册，只提供演示账号（邮箱和密码均已预填，直接点登录即可）。
+ * 预填密码的前提是每用户/全站都有调用配额，不怕被动消耗 token。
  */
 export default function LoginPage() {
   const [submitting, setSubmitting] = useState(false);
@@ -54,7 +55,7 @@ export default function LoginPage() {
           layout="vertical"
           requiredMark={false}
           onFinish={handleSubmit}
-          initialValues={{ email: DEMO_EMAIL }}
+          initialValues={{ email: DEMO_EMAIL, password: DEMO_PASSWORD }}
         >
           <Form.Item
             name="email"
@@ -91,7 +92,7 @@ export default function LoginPage() {
           className="mt-4"
           type="info"
           showIcon
-          title="演示账号（邮箱已自动填入）"
+          title="演示账号（已自动填入，直接点登录）"
           description={`${DEMO_EMAIL} / ${DEMO_PASSWORD}`}
         />
       </Card>

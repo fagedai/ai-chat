@@ -84,6 +84,27 @@ export async function initDb() {
   await sql`ALTER TABLE chats ADD COLUMN IF NOT EXISTS user_id INTEGER`;
   await sql`CREATE INDEX IF NOT EXISTS workflows_user_idx ON workflows (user_id)`;
   await sql`CREATE INDEX IF NOT EXISTS chats_user_idx ON chats (user_id)`;
+
+  // 用量表（配额判断 + 成本看板）
+  await sql`
+    CREATE TABLE IF NOT EXISTS usage_events (
+      id BIGSERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      kind TEXT NOT NULL DEFAULT 'chat',
+      input_tokens INTEGER,
+      output_tokens INTEGER,
+      latency_ms INTEGER,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS usage_events_user_time_idx
+    ON usage_events (user_id, created_at)
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS usage_events_time_idx
+    ON usage_events (created_at)
+  `;
 }
 
 /**

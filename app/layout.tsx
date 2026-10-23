@@ -49,6 +49,17 @@ export default function RootLayout({
                   </svg>
                 </Link>
                 <Link
+                  href="/usage"
+                  className="w-10 h-10 rounded-lg flex items-center justify-center text-zinc-500 hover:bg-blue-50 hover:text-blue-500 transition-colors"
+                  title="用量"
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="12" y1="20" x2="12" y2="10" />
+                    <line x1="18" y1="20" x2="18" y2="4" />
+                    <line x1="6" y1="20" x2="6" y2="16" />
+                  </svg>
+                </Link>
+                <Link
                   href="/workflow"
                   className="w-10 h-10 rounded-lg flex items-center justify-center text-zinc-500 hover:bg-blue-50 hover:text-blue-500 transition-colors"
                   title="工作流"

@@ -5,6 +5,7 @@ import { rerank } from "@/lib/rerank";
 import { summarizeMessages } from "@/lib/summarize";
 import { getLLM } from "@/lib/llm";
 import { requireSession } from "@/lib/dal";
+import { checkQuota, recordUsage } from "@/lib/usage";
 
 // ---- 加固配置 ----
 const SIMILARITY_THRESHOLD = 0.5; // 相似度低于 50% 的片段不引用
@@ -22,6 +23,22 @@ export async function POST(req: Request) {
   const session = await requireSession();
   if (session instanceof Response) return session;
 
+  // 配额检查放在检索之前：额度用尽时连 embedding 都不该调用
+  const quota = await checkQuota(session.userId);
+  if (!quota.allowed) {
+    return Response.json(
+      {
+        error:
+          quota.reason === "user"
+            ? `今日对话额度已用尽（${quota.used}/${quota.limit} 次），请明天再来`
+            : "今日全站体验额度已用尽，请明天再来",
+        quota,
+      },
+      { status: 429 }
+    );
+  }
+
+  const startedAt = Date.now();
   const { messages } = await req.json();
   const modelMessages: ModelMessage[] = await convertToModelMessages(messages);
 
@@ -172,6 +189,16 @@ ${context}
     model: provider.chat(model),
     system: finalSystemPrompt,
     messages: contextMessages,
+    // 流结束后落一条用量记录（token 数 + 端到端耗时）
+    onFinish: async ({ usage }) => {
+      await recordUsage({
+        userId: session.userId,
+        kind: "chat",
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        latencyMs: Date.now() - startedAt,
+      });
+    },
   });
 
   return result.toUIMessageStreamResponse({
