@@ -6,8 +6,31 @@
  * 通过环境变量 SILICONFLOW_API_KEY 自动切换
  */
 
+/** BGE 输入窗口上限（token） */
+const MAX_EMBEDDING_TOKENS = 512;
+
+/**
+ * 粗略估算 token 数：中文按 1 字 1 token，其余按 4 字符 1 token。
+ * 仅用于在调用前拦住明显超限的输入，避免 API 返回难以定位的 400。
+ */
+export function estimateTokens(text: string): number {
+  const cjk = (text.match(/[一-鿿　-〿＀-￯]/g) || [])
+    .length;
+  return cjk + Math.ceil((text.length - cjk) / 4);
+}
+
+function assertWithinLimit(text: string) {
+  const tokens = estimateTokens(text);
+  if (tokens > MAX_EMBEDDING_TOKENS) {
+    throw new Error(
+      `文本超过 Embedding 模型上限（约 ${tokens} token > ${MAX_EMBEDDING_TOKENS}），请调小分块长度`
+    );
+  }
+}
+
 // 云端 Embedding（硅基流动）
 async function getCloudEmbedding(text: string): Promise<number[]> {
+  assertWithinLimit(text);
   const res = await fetch("https://api.siliconflow.cn/v1/embeddings", {
     method: "POST",
     headers: {
@@ -30,6 +53,7 @@ async function getCloudEmbedding(text: string): Promise<number[]> {
 // 云端批量 Embedding（硅基流动）
 // 一次 API 调用处理多条文本，避免逐条请求的延迟和速率限制
 async function getCloudEmbeddings(texts: string[]): Promise<number[][]> {
+  texts.forEach(assertWithinLimit);
   const res = await fetch("https://api.siliconflow.cn/v1/embeddings", {
     method: "POST",
     headers: {

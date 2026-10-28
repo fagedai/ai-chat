@@ -12,6 +12,8 @@
 
 # testing
 /coverage
+# 评测用的 embedding 缓存
+/.cache
 
 # next.js
 /.next/

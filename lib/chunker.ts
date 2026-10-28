@@ -7,28 +7,44 @@
  *   4. 固定长度（兜底）       → 最后保底
  */
 
-const MAX_SIZE = 800; // 单个 chunk 最大字符数
+// BGE 系列模型的输入窗口是 512 token，中文约 1 字 1 token。
+// 实测超过 512 字会被 Embedding API 直接拒绝（400），因此上限取 400 留出余量。
+// 详见 docs/rag-eval-report.md 的评测结论。
+const MAX_SIZE = 400; // 单个 chunk 最大字符数（默认值）
 const MIN_SIZE = 50; // 单个 chunk 最小字符数（太短则合并）
-const OVERLAP = 100; // 固定长度兜底时的重叠字符数
+const OVERLAP = 50; // 固定长度兜底时的重叠字符数
+
+/** 分块参数，可在评测中对比不同取值 */
+export interface ChunkOptions {
+  maxSize?: number;
+  minSize?: number;
+  overlap?: number;
+}
 
 /**
  * 主入口：将文本递归切分为语义完整的 chunk
  */
-export function chunkText(text: string): string[] {
+export function chunkText(text: string, options: ChunkOptions = {}): string[] {
+  const maxSize = options.maxSize ?? MAX_SIZE;
+  const minSize = options.minSize ?? MIN_SIZE;
+  const overlap = options.overlap ?? OVERLAP;
+
   // 第 1 层：按 Markdown 标题切
   let chunks = splitByMarkdownHeaders(text);
 
   // 第 2 层：超长 chunk 按空行段落切
-  chunks = furtherSplit(chunks, splitByParagraphs);
+  chunks = furtherSplit(chunks, maxSize, (s) => splitByParagraphs(s, minSize));
 
   // 第 3 层：仍然超长按句号切
-  chunks = furtherSplit(chunks, splitBySentences);
+  chunks = furtherSplit(chunks, maxSize, (s) => splitBySentences(s, minSize));
 
   // 第 4 层：仍然超长用固定长度兜底
-  chunks = furtherSplit(chunks, (s) => fixedSizeSplit(s, MAX_SIZE, OVERLAP));
+  chunks = furtherSplit(chunks, maxSize, (s) =>
+    fixedSizeSplit(s, maxSize, overlap)
+  );
 
   // 合并过短的 chunk
-  chunks = mergeShortChunks(chunks, MIN_SIZE);
+  chunks = mergeShortChunks(chunks, minSize);
 
   // 过滤空 chunk
   return chunks.map((c) => c.trim()).filter((c) => c.length > 0);
@@ -89,12 +105,12 @@ function splitByMarkdownHeaders(text: string): string[] {
 /**
  * 按空行（\n\n）切分段落
  */
-function splitByParagraphs(text: string): string[] {
+function splitByParagraphs(text: string, minSize: number): string[] {
   const paragraphs = text.split(/\n\s*\n/);
   // 合并相邻短段落，避免过度碎片化
   return mergeShortChunks(
     paragraphs.filter((p) => p.trim().length > 0),
-    MIN_SIZE
+    minSize
   );
 }
 
@@ -103,12 +119,12 @@ function splitByParagraphs(text: string): string[] {
 /**
  * 按句号（。或 . ）切分句子
  */
-function splitBySentences(text: string): string[] {
+function splitBySentences(text: string, minSize: number): string[] {
   // 按。或. 切分，保留句号
   const sentences = text.split(/(?<=[。.])\s*/);
   return mergeShortChunks(
     sentences.filter((s) => s.trim().length > 0),
-    MIN_SIZE
+    minSize
   );
 }
 
@@ -146,11 +162,12 @@ function fixedSizeSplit(
  */
 function furtherSplit(
   chunks: string[],
+  maxSize: number,
   splitFn: (text: string) => string[]
 ): string[] {
   const result: string[] = [];
   for (const chunk of chunks) {
-    if (chunk.length > MAX_SIZE) {
+    if (chunk.length > maxSize) {
       result.push(...splitFn(chunk));
     } else {
       result.push(chunk);

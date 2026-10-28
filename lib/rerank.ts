@@ -52,17 +52,37 @@ function calcKeywordHitRate(chunk: HybridChunk, keywords: string[]): number {
   return hitCount / keywords.length;
 }
 
+/** 重排权重：向量 / BM25 / 关键词命中 */
+export interface RerankWeights {
+  vector: number;
+  bm25: number;
+  keyword: number;
+}
+
+export const DEFAULT_RERANK_WEIGHTS: RerankWeights = {
+  vector: 0.5,
+  bm25: 0.2,
+  keyword: 0.3,
+};
+
 /**
- * 重排序：向量 50% + BM25 20% + 关键词命中 30%
+ * 重排序：默认向量 50% + BM25 20% + 关键词命中 30%
+ * 权重可传入，用于评测中对比不同策略。
  */
-export function rerank(chunks: HybridChunk[], query: string): RerankedChunk[] {
+export function rerank(
+  chunks: HybridChunk[],
+  query: string,
+  weights: RerankWeights = DEFAULT_RERANK_WEIGHTS
+): RerankedChunk[] {
   const keywords = extractKeywords(query);
 
   return chunks
     .map((chunk) => {
       const keywordScore = calcKeywordHitRate(chunk, keywords);
       const score =
-        chunk.similarity * 0.5 + chunk.bm25_score * 0.2 + keywordScore * 0.3;
+        chunk.similarity * weights.vector +
+        chunk.bm25_score * weights.bm25 +
+        keywordScore * weights.keyword;
 
       return { ...chunk, score };
     })
