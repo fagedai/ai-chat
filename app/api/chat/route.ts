@@ -6,6 +6,16 @@ import { summarizeMessages } from "@/lib/summarize";
 import { getLLM } from "@/lib/llm";
 import { requireSession } from "@/lib/dal";
 import { checkQuota, recordUsage } from "@/lib/usage";
+import { initDb } from "@/lib/db";
+import {
+  MAX_CONTEXT_CHARS,
+  MAX_SINGLE_MESSAGE_CHARS,
+  messageChars,
+  trimToCharBudget,
+} from "@/lib/context-budget";
+
+/** 请求体上限（1MB）：正常对话远小于此，超大请求在读之前就拒绝 */
+const MAX_REQUEST_BYTES = 1024 * 1024;
 
 // ---- 加固配置 ----
 const SIMILARITY_THRESHOLD = 0.5; // 相似度低于 50% 的片段不引用
@@ -23,7 +33,31 @@ export async function POST(req: Request) {
   const session = await requireSession();
   if (session instanceof Response) return session;
 
+  // 请求体过大直接拒绝，避免先把几十 MB 读进内存
+  const contentLength = Number(req.headers.get("content-length") || 0);
+  if (contentLength > MAX_REQUEST_BYTES) {
+    return Response.json({ error: "请求内容过大" }, { status: 413 });
+  }
+
+  const { messages } = await req.json();
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return Response.json({ error: "消息格式不正确" }, { status: 400 });
+  }
+  const modelMessages: ModelMessage[] = await convertToModelMessages(messages);
+
+  // 单条消息硬上限：配额按次数计，超长消息会绕过成本预期
+  const oversized = modelMessages.find(
+    (m) => messageChars(m) > MAX_SINGLE_MESSAGE_CHARS
+  );
+  if (oversized) {
+    return Response.json(
+      { error: `单条消息不能超过 ${MAX_SINGLE_MESSAGE_CHARS} 字，请拆成多轮提问` },
+      { status: 400 }
+    );
+  }
+
   // 配额检查放在检索之前：额度用尽时连 embedding 都不该调用
+  await initDb();
   const quota = await checkQuota(session.userId);
   if (!quota.allowed) {
     return Response.json(
@@ -39,8 +73,6 @@ export async function POST(req: Request) {
   }
 
   const startedAt = Date.now();
-  const { messages } = await req.json();
-  const modelMessages: ModelMessage[] = await convertToModelMessages(messages);
 
   // 1. 尝试从知识库检索相关内容
   let systemPrompt = "你是一个知识库问答助手。";
@@ -178,6 +210,9 @@ ${context}
     contextMessages = modelMessages.slice(splitAt);
     historySummary = summarizeMessages(oldMessages);
   }
+
+  // 字符预算兜底：最近 10 轮原文也可能很长，超预算从最早的消息开始丢弃
+  contextMessages = trimToCharBudget(contextMessages, MAX_CONTEXT_CHARS);
 
   // 3. 流式回答
   const finalSystemPrompt = historySummary

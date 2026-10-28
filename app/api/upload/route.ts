@@ -1,10 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { initDb, insertChunk, listDocuments } from "@/lib/db";
+import { initDb, insertChunks, listDocuments } from "@/lib/db";
 import { getEmbeddings } from "@/lib/embedding";
 import { chunkText } from "@/lib/chunker";
 import { sanitizeContent } from "@/lib/sanitizer";
 import mammoth from "mammoth";
 import { requireSession } from "@/lib/dal";
+
+/** 单个文件大小上限（5MB），在解析 multipart 之前就要挡住 */
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
+/** multipart 边界、表单字段等额外开销的余量 */
+const MULTIPART_OVERHEAD = 512 * 1024;
+/** 单篇文档切片数量上限，防止一次性向 Embedding API 发送过大请求 */
+const MAX_CHUNKS = 500;
 
 /**
  * POST /api/upload
@@ -16,10 +23,19 @@ export async function POST(req: NextRequest) {
   if (session instanceof Response) return session;
 
   try {
-    // 1. 初始化数据库（首次调用会建表）
+    // 1. 初始化数据库（进程内只执行一次）
     await initDb();
 
-    // 2. 解析上传的文件
+    // 2. 先看 Content-Length：超大请求不应进入 multipart 解析（否则整个文件先被读进内存）
+    const contentLength = Number(req.headers.get("content-length") || 0);
+    if (contentLength > MAX_FILE_BYTES + MULTIPART_OVERHEAD) {
+      return NextResponse.json(
+        { error: `文件过大，单个文件不能超过 ${MAX_FILE_BYTES / 1024 / 1024}MB` },
+        { status: 413 }
+      );
+    }
+
+    // 3. 解析上传的文件
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
 
@@ -27,7 +43,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "没有上传文件" }, { status: 400 });
     }
 
-    // 3. 提取文件文本内容
+    if (file.size > MAX_FILE_BYTES) {
+      return NextResponse.json(
+        { error: `文件过大，单个文件不能超过 ${MAX_FILE_BYTES / 1024 / 1024}MB` },
+        { status: 413 }
+      );
+    }
+
+    // 4. 提取文件文本内容
     const text = await extractText(file);
 
     if (!text.trim()) {
@@ -40,7 +63,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: check.reason }, { status: 403 });
     }
 
-    // 4. 检查同名文件是否已存在（仅限当前用户的知识库）
+    // 5. 检查同名文件是否已存在（仅限当前用户的知识库）
     const existingDocs = await listDocuments(session.userId);
     if (existingDocs.some((d) => d.filename === file.name)) {
       return NextResponse.json(
@@ -49,18 +72,19 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 5. 切片
+    // 6. 切片
     const chunks = chunkText(text);
+    if (chunks.length > MAX_CHUNKS) {
+      return NextResponse.json(
+        { error: `文档切片过多（${chunks.length}），请拆分后再上传` },
+        { status: 413 }
+      );
+    }
 
-    // 6. 批量向量化 + 并行写入数据库
-    // 优化：原先逐片 await（N次API调用 + N次DB写入），
-    // 现在云端只需 1 次 API 批量调用 + 并行 DB 写入
+    // 7. 一次批量向量化 + 事务写入
+    // 写入放在事务里：任一切片失败整篇回滚，避免留下半篇文档占住文件名
     const embeddings = await getEmbeddings(chunks);
-    await Promise.all(
-      embeddings.map((embedding, i) =>
-        insertChunk(file.name, i, chunks[i], embedding, session.userId)
-      )
-    );
+    await insertChunks(file.name, chunks, embeddings, session.userId);
 
     return NextResponse.json({
       success: true,

@@ -17,7 +17,23 @@ export const sql = postgres({
  * 初始化数据库：创建 pgvector 扩展 + documents 表
  * 在应用启动时或首次上传时调用
  */
-export async function initDb() {
+let initPromise: Promise<void> | null = null;
+
+/**
+ * 初始化数据库（进程内只执行一次）
+ * 失败时清空缓存，允许下次请求重试，避免一次网络抖动就让进程永久不可用。
+ */
+export function initDb(): Promise<void> {
+  if (!initPromise) {
+    initPromise = runInitDb().catch((error) => {
+      initPromise = null;
+      throw error;
+    });
+  }
+  return initPromise;
+}
+
+async function runInitDb() {
   await sql`CREATE EXTENSION IF NOT EXISTS vector`;
 
   const dim = getEmbeddingDimension();
@@ -94,21 +110,31 @@ export async function initDb() {
 }
 
 /**
- * 插入文档切片及其向量
+ * 批量插入文档切片及其向量
+ *
+ * 在一个事务内写入：任一切片失败则整篇回滚，
+ * 避免留下「半篇文档」——否则同名文件会被占用且无法重新上传。
  */
-export async function insertChunk(
+export async function insertChunks(
   filename: string,
-  chunkIndex: number,
-  content: string,
-  embedding: number[],
+  chunks: string[],
+  embeddings: number[][],
   userId: number
-) {
-  // pgvector 要求向量格式为 "[0.1, 0.2, ...]"，需转为 JSON 字符串
-  const vectorStr = JSON.stringify(embedding);
-  await sql`
-    INSERT INTO documents (filename, chunk_index, content, embedding, user_id)
-    VALUES (${filename}, ${chunkIndex}, ${content}, ${vectorStr}::vector, ${userId})
-  `;
+): Promise<void> {
+  if (chunks.length !== embeddings.length) {
+    throw new Error("切片数量与向量数量不一致");
+  }
+
+  await sql.begin(async (tx) => {
+    for (let i = 0; i < chunks.length; i++) {
+      // pgvector 要求向量格式为 "[0.1, 0.2, ...]"，需转为 JSON 字符串
+      const vectorStr = JSON.stringify(embeddings[i]);
+      await tx`
+        INSERT INTO documents (filename, chunk_index, content, embedding, user_id)
+        VALUES (${filename}, ${i}, ${chunks[i]}, ${vectorStr}::vector, ${userId})
+      `;
+    }
+  });
 }
 
 /**
