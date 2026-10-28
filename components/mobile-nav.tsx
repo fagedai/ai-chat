@@ -55,21 +55,6 @@ export function MobileNav() {
         <span className="text-[10px] mt-0.5">用量</span>
       </Link>
 
-      <Link
-        href="/workflow"
-        className={`flex flex-col items-center justify-center w-16 h-full transition-colors ${
-          isActive("/workflow") ? "text-blue-500" : "text-zinc-400"
-        }`}
-      >
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="5" cy="6" r="2" />
-          <circle cx="19" cy="6" r="2" />
-          <circle cx="12" cy="18" r="2" />
-          <line x1="5" y1="8" x2="12" y2="16" />
-          <line x1="19" y1="8" x2="12" y2="16" />
-        </svg>
-        <span className="text-[10px] mt-0.5">工作流</span>
-      </Link>
     </nav>
   );
 }

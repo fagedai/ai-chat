@@ -1,7 +1,7 @@
 /**
  * 用量记录与配额
  *
- * 每次真正调用 LLM（对话/工作流）后落一条 usage_events，
+ * 每次真正调用 LLM 后落一条 usage_events，
  * 既用于每日配额判断，也用于用量看板与成本估算。
  * 按 Asia/Shanghai 自然日统计，避免北京时间早上 8 点才算新的一天。
  */
@@ -20,7 +20,7 @@ export const DAILY_LIMIT_GLOBAL = Number(
 const PRICE_INPUT_PER_M = Number(process.env.LLM_PRICE_INPUT_PER_M || 0);
 const PRICE_OUTPUT_PER_M = Number(process.env.LLM_PRICE_OUTPUT_PER_M || 0);
 
-export type UsageKind = "chat" | "workflow";
+export type UsageKind = "chat";
 
 export interface UsageRecord {
   userId: number;
@@ -140,7 +140,6 @@ export interface UsageSummary {
   today: {
     calls: number;
     chatCalls: number;
-    workflowCalls: number;
     inputTokens: number;
     outputTokens: number;
     avgLatencyMs: number;
@@ -160,7 +159,6 @@ export async function getUsageSummary(
       SELECT
         count(*)::int AS calls,
         count(*) FILTER (WHERE kind = 'chat')::int AS chat_calls,
-        count(*) FILTER (WHERE kind = 'workflow')::int AS workflow_calls,
         COALESCE(SUM(input_tokens), 0)::int AS input_tokens,
         COALESCE(SUM(output_tokens), 0)::int AS output_tokens,
         COALESCE(ROUND(AVG(latency_ms)), 0)::int AS avg_latency
@@ -189,7 +187,6 @@ export async function getUsageSummary(
   const t = (todayRows as unknown as Array<{
     calls: number;
     chat_calls: number;
-    workflow_calls: number;
     input_tokens: number;
     output_tokens: number;
     avg_latency: number;
@@ -205,7 +202,6 @@ export async function getUsageSummary(
     today: {
       calls: t?.calls ?? 0,
       chatCalls: t?.chat_calls ?? 0,
-      workflowCalls: t?.workflow_calls ?? 0,
       inputTokens,
       outputTokens,
       avgLatencyMs: t?.avg_latency ?? 0,

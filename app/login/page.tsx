@@ -44,7 +44,7 @@ export default function LoginPage() {
           知识库问答
         </Typography.Title>
         <Typography.Paragraph type="secondary" className="!mb-4 !text-xs">
-          登录后使用 RAG 问答、文档管理与工作流
+          登录后使用 RAG 问答与文档管理
         </Typography.Paragraph>
 
         {error && (

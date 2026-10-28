@@ -1,6 +1,6 @@
 # RAG 知识库问答系统
 
-一个可登录、多租户隔离、带用量配额的知识库问答产品：上传文档 → 切片向量化 → 混合检索 + 重排序 → 流式回答并标注引用来源。附带可视化工作流编排和成本看板。
+一个可登录、多租户隔离、带用量配额的知识库问答产品：上传文档 → 切片向量化 → 混合检索 + 重排序 → 流式回答并标注引用来源，附带成本看板。
 
 > 在线体验：<https://ai-chat-333243-11-1340654264.sh.run.tcloudbase.com/login>
 > 演示账号：`demo@ai-chat.com` / `demo123456`
@@ -21,16 +21,10 @@
 - 超过 10 轮对话自动摘要早期消息，控制 token 消耗
 - 对话历史自动保存到数据库，可切换、删除
 
-**工作流编排**
-
-- React Flow 画布，节点类型：开始 / LLM / 工具 / 结束
-- 工具节点内置「知识库检索」「文本统计」「转大写」
-- 拓扑排序后逐节点执行，SSE 实时推送每个节点的运行状态
-
 **多租户与安全**
 
 - 邮箱 + 密码登录，bcrypt 哈希，JWT 存 httpOnly cookie，7 天有效期
-- `documents` / `chats` / `workflows` 全部带 `user_id`，读写、更新、删除都按用户隔离，越权返回 404
+- `documents` / `chats` 全部带 `user_id`，读写、更新、删除都按用户隔离，越权返回 404
 - 上传内容做 Prompt 注入检测与 10 万字上限校验，同名文件拒绝覆盖
 - 登录接口按 IP 限流（10 分钟 5 次失败），防撞库
 
@@ -48,7 +42,6 @@
 | LLM | Vercel AI SDK 6，硅基流动 Qwen2.5-32B（备选 DeepSeek） |
 | 向量 | BGE-large-zh-v1.5（1024 维，云端）；无 Key 时回退本地 bge-small-zh（512 维） |
 | 数据库 | PostgreSQL + pgvector（Supabase） |
-| 工作流 | @xyflow/react |
 | 认证 | bcryptjs + jose（HS256 JWT）+ httpOnly cookie |
 | 部署 | Docker 多阶段构建 → 腾讯云 CloudBase 云托管 |
 
@@ -71,7 +64,7 @@ Next.js（App Router）
 LLM（流式返回）
 ```
 
-表结构：`users`、`documents`（含 `embedding vector(1024)`）、`chats`、`workflows`、`usage_events`。
+表结构：`users`、`documents`（含 `embedding vector(1024)`）、`chats`、`usage_events`。
 
 ## 快速开始
 
@@ -121,7 +114,7 @@ docker run -p 3000:3000 --env-file .env.local ai-chat
 npm test
 ```
 
-覆盖切片、重排、净化、工作流拓扑排序、Markdown 分块等单位测试，以及 embedding / LLM / RAG 集成测试（需真实 Key）。
+覆盖切片、重排、净化、Markdown 分块等单位测试，以及 embedding / LLM / RAG 集成测试（需真实 Key）。
 
 ## 已知限制
 

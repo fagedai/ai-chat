@@ -55,18 +55,6 @@ export async function initDb() {
     ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100)
   `;
 
-  // 工作流表
-  await sql`
-    CREATE TABLE IF NOT EXISTS workflows (
-      id SERIAL PRIMARY KEY,
-      name TEXT NOT NULL DEFAULT '未命名工作流',
-      data JSONB NOT NULL,
-      user_id INTEGER,
-      created_at TIMESTAMP DEFAULT NOW(),
-      updated_at TIMESTAMP DEFAULT NOW()
-    )
-  `;
-
   // 对话历史表
   await sql`
     CREATE TABLE IF NOT EXISTS chats (
@@ -80,9 +68,7 @@ export async function initDb() {
   `;
 
   // 存量表补列（幂等）
-  await sql`ALTER TABLE workflows ADD COLUMN IF NOT EXISTS user_id INTEGER`;
   await sql`ALTER TABLE chats ADD COLUMN IF NOT EXISTS user_id INTEGER`;
-  await sql`CREATE INDEX IF NOT EXISTS workflows_user_idx ON workflows (user_id)`;
   await sql`CREATE INDEX IF NOT EXISTS chats_user_idx ON chats (user_id)`;
 
   // 用量表（配额判断 + 成本看板）
@@ -253,84 +239,6 @@ export async function deleteDocument(
 ): Promise<number> {
   const result = await sql`
     DELETE FROM documents WHERE filename = ${filename} AND user_id = ${userId}
-  `;
-  return result.count;
-}
-
-// ========== 工作流 CRUD ==========
-
-/**
- * 保存工作流（新增或更新）
- */
-export async function saveWorkflow(
-  id: number | null,
-  name: string,
-  data: unknown,
-  userId: number
-): Promise<number> {
-  if (id) {
-    // 更新现有工作流（必须同时校验归属，防止越权改他人数据）
-    const result = await sql`
-      UPDATE workflows SET name = ${name}, data = ${JSON.stringify(data)}, updated_at = NOW()
-      WHERE id = ${id} AND user_id = ${userId} RETURNING id
-    `;
-    const row = (result as unknown as Array<{ id: number }>)[0];
-    if (!row) throw new Error("工作流不存在或无权访问");
-    return row.id;
-  } else {
-    // 新建工作流
-    const result = await sql`
-      INSERT INTO workflows (name, data, user_id)
-      VALUES (${name}, ${JSON.stringify(data)}, ${userId})
-      RETURNING id
-    `;
-    return (result as unknown as Array<{ id: number }>)[0].id;
-  }
-}
-
-/**
- * 获取所有工作流列表
- */
-export async function listWorkflows(userId: number) {
-  const results = await sql`
-    SELECT id, name, created_at, updated_at FROM workflows
-    WHERE user_id = ${userId}
-    ORDER BY updated_at DESC
-  `;
-  return results as unknown as Array<{
-    id: number;
-    name: string;
-    created_at: string;
-    updated_at: string;
-  }>;
-}
-
-/**
- * 获取单个工作流详情
- */
-export async function getWorkflow(id: number, userId: number) {
-  const results = await sql`
-    SELECT * FROM workflows WHERE id = ${id} AND user_id = ${userId}
-  `;
-  return (results as unknown as Array<{
-    id: number;
-    name: string;
-    data: unknown;
-    created_at: string;
-    updated_at: string;
-  }>)[0] || null;
-}
-
-/**
- * 删除工作流
- */
-/** 删除成功返回受影响行数，0 表示不存在或不属于当前用户 */
-export async function deleteWorkflow(
-  id: number,
-  userId: number
-): Promise<number> {
-  const result = await sql`
-    DELETE FROM workflows WHERE id = ${id} AND user_id = ${userId}
   `;
   return result.count;
 }

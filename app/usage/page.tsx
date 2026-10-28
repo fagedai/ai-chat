@@ -13,7 +13,6 @@ interface UsageSummary {
   today: {
     calls: number;
     chatCalls: number;
-    workflowCalls: number;
     inputTokens: number;
     outputTokens: number;
     avgLatencyMs: number;
@@ -148,7 +147,7 @@ export default function UsagePage() {
                 prefix={<ClockCircleOutlined />}
               />
               <div className="text-[11px] text-zinc-400 mt-1">
-                对话 {today.chatCalls} · 工作流 {today.workflowCalls}
+                今日对话 {today.chatCalls} 次
               </div>
             </Card>
           </Col>

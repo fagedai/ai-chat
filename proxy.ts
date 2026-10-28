@@ -21,5 +21,5 @@ export function proxy(request: NextRequest) {
 
 export const config = {
   // 只保护页面路由；/login 与 /api/* 不经过这里
-  matcher: ["/", "/upload/:path*", "/workflow/:path*", "/usage/:path*"],
+  matcher: ["/", "/upload/:path*", "/usage/:path*"],
 };
