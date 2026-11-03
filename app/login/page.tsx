@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Alert, Button, Card, Form, Input, Typography } from "antd";
 import { LockOutlined, MailOutlined } from "@ant-design/icons";
 import { DEMO_EMAIL, DEMO_PASSWORD } from "@/lib/demo";
 
 /**
  * 登录页
- * 本版不开放注册，只提供演示账号（邮箱和密码均已预填，直接点登录即可）。
+ * 演示账号的邮箱和密码均已预填，直接点登录即可。
  * 预填密码的前提是每用户/全站都有调用配额，不怕被动消耗 token。
  */
 export default function LoginPage() {
@@ -95,6 +96,13 @@ export default function LoginPage() {
           title="演示账号（已自动填入，直接点登录）"
           description={`${DEMO_EMAIL} / ${DEMO_PASSWORD}`}
         />
+
+        <div className="mt-4 text-center text-xs">
+          没有账号？
+          <Link href="/register" className="text-blue-600">
+            注册一个
+          </Link>
+        </div>
       </Card>
     </div>
   );

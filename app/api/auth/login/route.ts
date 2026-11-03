@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "请输入邮箱和密码" }, { status: 400 });
     }
 
-    // 本版只开放演示账号：首次登录时按需播种
+    // 演示账号按需播种：任何人用 demo 账号登录时若不存在则先建
     await ensureDemoUser();
 
     const user = await getUserByEmail(email);
