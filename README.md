@@ -9,12 +9,12 @@
 
 **知识库问答**
 
-- 支持 `.txt` / `.md` / `.docx` 上传，按标题层级 + 段落递归切片（单块 ≤ 400 字，重叠 50 字；上限由 BGE 的 512 token 输入窗口决定）
+- 支持 `.txt` / `.md` / `.docx` 上传，按标题层级+段落递归切片（单块≤ 400字，重叠50字；上限由BGE的512 token输入窗口决定）
 - 混合检索：pgvector 语义检索 + PostgreSQL `ts_rank` / `ILIKE` 关键词检索并行，按 id 合并去重
 - 阈值过滤（向量 ≥ 0.6 或 BM25 ≥ 0.3，可用环境变量调整）+ 加权重排序（向量 0.5 / BM25 0.2 / 关键词命中 0.3），取 top-3 注入 system prompt
 - 回答流式输出，末尾标注 `[来源N] 文件名`，前端可展开查看完整检索链路
 - 检索不到时自动降级为普通对话，不阻断提问
-- 阈值与权重的取值来自离线评测（`npm run eval`），不是拍脑袋定的，结论见 [评测报告](docs/rag-eval-report.md)
+- 阈值与权重的取值来自离线评测（`npm run eval`），结论见[评测报告](docs/rag-eval-report.md)
 
 **对话体验**
 
@@ -24,15 +24,15 @@
 
 **多租户与安全**
 
-- 邮箱 + 密码登录，bcrypt 哈希，JWT 存 httpOnly cookie，7 天有效期
-- `documents` / `chats` 全部带 `user_id`，读写、更新、删除都按用户隔离，越权返回 404
-- 上传内容做 Prompt 注入检测与 10 万字上限校验，同名文件拒绝覆盖
-- 登录接口按 IP 限流（10 分钟 5 次失败），防撞库
+- 邮箱+密码登录，bcrypt哈希，JWT存httpOnly cookie，7天有效期
+- `documents`/`chats` 全部带 `user_id`，读写、更新、删除都按用户隔离，越权返回404
+- 上传内容做Prompt注入检测与10万字上限校验，同名文件拒绝覆盖
+- 登录接口按IP限流，防撞库
 
 **成本控制**
 
-- 每用户每日 300 次调用、全站每日 1000 次，超额返回 429
-- 每次 LLM 调用记录 token 与耗时，`/usage` 页面展示今日用量、剩余额度、平均响应时间和估算成本
+- 每用户每日300次调用、全站每日1000次，超额返回 429
+- 每次 LLM 调用记录token与耗时，`/usage`页面展示今日用量、剩余额度、平均响应时间和估算成本
 
 ## 技术栈
 
@@ -56,7 +56,7 @@ Next.js（App Router）
   ├─ proxy.ts            乐观鉴权重定向（只查 cookie 是否存在）
   ├─ app/api/*           路由处理器：真实会话校验 + 配额检查
   ├─ lib/dal.ts          会话解析（jose 验签，cache 去重）
-  ├─ lib/usage.ts        用量记录 / 配额 / 成本估算
+  ├─ lib/usage.ts        用量记录/配额/成本估算
   └─ lib/hybrid.ts       混合检索
         ├─ lib/embedding.ts  → 硅基流动 Embedding API
         ├─ lib/db.ts         → PostgreSQL + pgvector
@@ -79,20 +79,20 @@ npm run dev
 
 | 变量 | 必填 | 说明 |
 |---|---|---|
-| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | ✅ | PostgreSQL 连接信息。Supabase 事务池用 6543 端口、用户名形如 `postgres.<项目ref>` |
-| `SESSION_SECRET` | ✅ | JWT 签名密钥，`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` 生成 |
-| `SILICONFLOW_API_KEY` | ✅ | 用于云端 Embedding + 默认 LLM；不填会退化为本地 512 维模型 |
-| `DEEPSEEK_API_KEY` / `DEEPSEEK_API_BASE` | ❌ | 未配置硅基流动时的 LLM 兜底 |
-| `CHAT_DAILY_LIMIT_PER_USER` | ❌ | 每用户每日调用上限，默认 `300` |
-| `CHAT_DAILY_LIMIT_GLOBAL` | ❌ | 全站每日调用上限，默认 `1000` |
-| `LLM_PRICE_INPUT_PER_M` / `LLM_PRICE_OUTPUT_PER_M` | ❌ | 单价（元/百万 token），配置后看板显示估算成本 |
-| `HF_ENDPOINT` | ❌ | 本地 embedding 模型的下载镜像 |
+| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | YES | PostgreSQL 连接信息。Supabase 事务池用 6543 端口、用户名形如 `postgres.<项目ref>` |
+| `SESSION_SECRET` | YES | JWT签名密钥，`node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` 生成 |
+| `SILICONFLOW_API_KEY` | YES | 用于云端Embedding+默认 LLM；不填会退化为本地 512 维模型 |
+| `DEEPSEEK_API_KEY` / `DEEPSEEK_API_BASE` | NO | 未配置硅基流动时的 LLM 兜底 |
+| `CHAT_DAILY_LIMIT_PER_USER` | NO | 每用户每日调用上限，默认 `300` |
+| `CHAT_DAILY_LIMIT_GLOBAL` | NO | 全站每日调用上限，默认 `1000` |
+| `LLM_PRICE_INPUT_PER_M` / `LLM_PRICE_OUTPUT_PER_M` | NO | 单价（元/百万 token），配置后看板显示估算成本 |
+| `HF_ENDPOINT` | NO | 本地 embedding 模型的下载镜像 |
 
 首次访问会自动建表并播种演示账号（`demo@ai-chat.com` / `demo123456`）。
 
 ## 部署
 
-已适配腾讯云 CloudBase 云托管（容器）：
+已适配腾讯云CloudBase云托管（容器）：
 
 ```bash
 docker build -t ai-chat .
@@ -103,8 +103,8 @@ docker run -p 3000:3000 --env-file .env.local ai-chat
 
 - 构建目录 `/`，Dockerfile 名称 `Dockerfile`
 - 服务端口 `3000`，访问端口 `80`
-- 实例数最小 0 / 最大 1，规格 0.25 核 0.5G
-- 请求超时 ≥ 60 秒（SSE 长连接需要）
+- 实例数最小0 / 最大1，规格0.25 核0.5G
+- 请求超时≥60秒（SSE长连接需要）
 - 环境变量：上表全部必填项
 
 > `output: "standalone"` 已开启，镜像不含源码；`public` 与 `.next/static` 由 Dockerfile 显式拷贝。
@@ -123,13 +123,13 @@ npm test
 npm run eval
 ```
 
-用 `test-docs/` 的 6 篇文档、30 条标注用例（24 条可回答 + 6 条应拒答），对比分块大小、重排权重、检索阈值三组参数，输出 ChunkHit@3 / FileHit@3 / MRR / 拒答准确率，报告写入 [docs/rag-eval-report.md](docs/rag-eval-report.md)。Embedding 结果缓存在 `.cache/`，重复运行不重复计费。
+用 `test-docs/` 的 6 篇文档、30 条标注用例（24条可回答+6条应拒答），对比分块大小、重排权重、检索阈值三组参数，输出 ChunkHit@3/FileHit@3/MRR/拒答准确率，报告写入 [docs/rag-eval-report.md](docs/rag-eval-report.md)。Embedding 结果缓存在 `.cache/`，重复运行不重复计费。
 
 当前基线（分块 400 字、权重 0.5/0.2/0.3、阈值 0.6/0.3）：ChunkHit@3 83.3%，FileHit@3 91.7%，MRR 0.785，拒答准确率 66.7%。
 
 ## 已知限制
 
 - 限流基于进程内存，单实例部署有效；多实例需换 Redis
-- 会话是无状态 JWT，删除用户不会立刻吊销已签发的 token（最长 7 天）
+- 会话是无状态JWT，删除用户不会立刻吊销已签发的token（最长7天）
 - 跨境外置数据库（Supabase）延迟约 100–300ms，后续可迁至同区域
 - 只开放演示账号，没有注册流程
